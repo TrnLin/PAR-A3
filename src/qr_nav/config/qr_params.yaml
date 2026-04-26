@@ -1,0 +1,35 @@
+# =============================================================================
+# QR Code Command Navigation Parameters — ROSbot 3 PRO (Project A)
+# =============================================================================
+
+qr_detector:
+  ros__parameters:
+    # --- Camera topic ---
+    rgb_image_topic: "/camera/camera/color/image_raw"
+
+    # --- Detection ---
+    detection_rate_hz: 15.0         # Hz — frame processing rate
+    min_bbox_area: 500              # pixels — ignore tiny QR detections
+    command_cooldown: 1.0           # seconds — debounce same command
+
+command_interpreter:
+  ros__parameters:
+    # --- Speed ---
+    cruise_speed: 0.2               # m/s — base forward speed
+    turn_speed: 0.8                 # rad/s — angular velocity for turns
+    speed_increment: 0.05           # m/s — SPEED_UP / SPEED_DOWN step
+    min_speed: 0.05                 # m/s — floor for SPEED_DOWN
+    max_speed: 0.4                  # m/s — ceiling for SPEED_UP
+
+    # --- Turn durations ---
+    turn_90_duration: 2.0           # seconds for 90° turn (TURN_LEFT / TURN_RIGHT)
+    turn_180_duration: 4.0          # seconds for 180° turn (U_TURN)
+
+    # --- Timing ---
+    control_rate_hz: 20.0           # Hz
+    recovery_timeout: 5.0           # seconds — enter RECOVERING if no QR command
+
+qr_logger:
+  ros__parameters:
+    log_directory: "/tmp/qr_nav_logs"
+    log_rate_hz: 5.0
