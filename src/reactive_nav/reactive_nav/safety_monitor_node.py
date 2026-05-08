@@ -11,8 +11,15 @@ forwarding resumes.
 This node runs at a higher rate than the navigator (50 Hz by default) because
 it is safety-critical.
 
+Output message type:
+  ROSbot 3 / 3 PRO running ROS 2 Jazzy ships with the rosbot_base_controller
+  subscribing to /cmd_vel as geometry_msgs/TwistStamped (not plain Twist).
+  This node therefore publishes TwistStamped so the wheels actually move.
+  The `output_stamped` parameter (default True) lets us fall back to plain
+  Twist on older driver versions if needed.
+
 Published topics:
-  /cmd_vel         — geometry_msgs/Twist (final motor commands)
+  /cmd_vel         — geometry_msgs/TwistStamped (final motor commands)
   /safety_status   — std_msgs/String ('OK' or 'EMERGENCY_STOP')
 """
 
@@ -21,7 +28,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TwistStamped
 from sensor_msgs.msg import Range
 from std_msgs.msg import String
 
@@ -46,11 +53,15 @@ class SafetyMonitorNode(Node):
         self.declare_parameter('nav_cmd_vel_topic', '/nav_cmd_vel')
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter('monitor_rate_hz', 50.0)
+        self.declare_parameter('output_stamped', True)
+        self.declare_parameter('cmd_vel_frame_id', 'base_link')
 
         self.stop_dist = self.get_parameter('emergency_stop_distance').value
         self.resume_dist = self.get_parameter('resume_distance').value
         self.tof_timeout = self.get_parameter('tof_timeout').value
         rate_hz = self.get_parameter('monitor_rate_hz').value
+        self.output_stamped = self.get_parameter('output_stamped').value
+        self.cmd_vel_frame_id = self.get_parameter('cmd_vel_frame_id').value
 
         # --- State ---
         self.is_stopped = False
@@ -80,8 +91,11 @@ class SafetyMonitorNode(Node):
         )
 
         # --- Publishers ---
+        # ROSbot 3 / 3 PRO base controller subscribes to TwistStamped on
+        # /cmd_vel. If output_stamped is False we fall back to plain Twist.
+        self._cmd_msg_type = TwistStamped if self.output_stamped else Twist
         self.cmd_pub = self.create_publisher(
-            Twist,
+            self._cmd_msg_type,
             self.get_parameter('cmd_vel_topic').value,
             10,
         )
@@ -92,7 +106,8 @@ class SafetyMonitorNode(Node):
 
         self.get_logger().info(
             f'Safety monitor initialised: stop < {self.stop_dist:.2f}m, '
-            f'resume > {self.resume_dist:.2f}m'
+            f'resume > {self.resume_dist:.2f}m, '
+            f'output={"TwistStamped" if self.output_stamped else "Twist"}'
         )
 
     # ------------------------------------------------------------------
@@ -137,15 +152,23 @@ class SafetyMonitorNode(Node):
         # Publish
         status_msg = String()
         if self.is_stopped:
-            # Publish zero velocity
-            self.cmd_pub.publish(Twist())
+            self.cmd_pub.publish(self._build_cmd(Twist()))
             status_msg.data = 'EMERGENCY_STOP'
         else:
-            # Forward navigator command
-            self.cmd_pub.publish(self.latest_nav_cmd)
+            self.cmd_pub.publish(self._build_cmd(self.latest_nav_cmd))
             status_msg.data = 'OK'
 
         self.status_pub.publish(status_msg)
+
+    def _build_cmd(self, twist: Twist):
+        """Wrap a Twist in TwistStamped (with current time) when stamped output is enabled."""
+        if not self.output_stamped:
+            return twist
+        out = TwistStamped()
+        out.header.stamp = self.get_clock().now().to_msg()
+        out.header.frame_id = self.cmd_vel_frame_id
+        out.twist = twist
+        return out
 
 
 def main(args=None):
@@ -156,10 +179,15 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        # Send stop on shutdown
-        node.cmd_pub.publish(Twist())
+        try:
+            node.cmd_pub.publish(node._build_cmd(Twist()))
+        except Exception:
+            pass
         node.destroy_node()
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

@@ -140,7 +140,12 @@ class SensorFusionNode(Node):
     # ------------------------------------------------------------------
 
     def _lidar_cb(self, msg: LaserScan):
-        """Process 360° LIDAR scan into sector minimum distances."""
+        """Process 360° LIDAR scan into sector minimum distances.
+
+        Defensive against self-reflections: any return below `min_valid_range`
+        is dropped (treated as max_range, i.e. "no obstacle"). This pairs with
+        using /scan_filtered as the source topic.
+        """
         sectors = np.full(self.num_sectors, self.max_range)
         angle = msg.angle_min
         for r in msg.ranges:
@@ -148,6 +153,7 @@ class SensorFusionNode(Node):
                 sector_idx = self._angle_to_sector(angle)
                 sectors[sector_idx] = min(sectors[sector_idx], r)
             angle += msg.angle_increment
+        sectors[sectors < self.min_valid_range] = self.max_range
         self.lidar_sectors = sectors
 
     def _depth_cb(self, msg: Image):
@@ -192,11 +198,16 @@ class SensorFusionNode(Node):
         self.depth_sectors = sectors
 
     def _tof_cb(self, msg: Range, key: str):
-        """Store the latest ToF range reading."""
-        if msg.range > msg.min_range:
+        """Store the latest ToF range reading.
+
+        VL53L0X reports out-of-range as a value <= msg.min_range or >=
+        msg.max_range. Treat those as "no obstacle" (max_range) rather than
+        a phantom near-collision.
+        """
+        if msg.min_range < msg.range < msg.max_range and msg.range > self.min_valid_range:
             self.tof_latest[key] = min(msg.range, self.max_range)
         else:
-            self.tof_latest[key] = msg.min_range
+            self.tof_latest[key] = self.max_range
 
     # ------------------------------------------------------------------
     # Fusion
@@ -260,7 +271,10 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

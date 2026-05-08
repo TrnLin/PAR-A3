@@ -5,7 +5,11 @@
 sensor_fusion:
   ros__parameters:
     # --- Topic names (configurable for different ROSbot setups) ---
-    lidar_topic: "/scan"
+    # Use /scan_filtered: Husarion's laser_filter node strips out beams that
+    # hit the robot's own chassis, antenna mast, and sensor brackets. Without
+    # this, the LIDAR sees self-reflections at ~0.07-0.08m and the navigator
+    # gets stuck thinking it's surrounded by obstacles.
+    lidar_topic: "/scan_filtered"
     depth_image_topic: "/camera/camera/depth/image_rect_raw"
     depth_info_topic: "/camera/camera/depth/camera_info"
     tof_front_left_topic: "/range/fl"
@@ -16,7 +20,10 @@ sensor_fusion:
     # --- Sector configuration ---
     num_sectors: 12                 # 12 sectors of 30 degrees each
     max_range: 5.0                  # metres — readings beyond this are ignored
-    min_valid_range: 0.05           # metres — readings below this are noise
+    # Raised from 0.05 to 0.10: anything closer than 10cm is treated as a
+    # self-reflection / sensor noise rather than a real obstacle (defense-in-
+    # depth on top of /scan_filtered).
+    min_valid_range: 0.10           # metres — readings below this are ignored as noise
 
     # --- Depth camera parameters ---
     depth_camera_hfov: 72.0         # OAK-D Pro horizontal FOV in degrees
