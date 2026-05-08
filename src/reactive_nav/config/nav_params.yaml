@@ -48,17 +48,22 @@ reactive_navigator:
     backup_speed: -0.15             # m/s — reverse speed for dead-end recovery
 
     # --- Distance thresholds ---
-    free_roam_threshold: 1.2        # m — all sectors clear beyond this = FREE_ROAM
-    careful_threshold: 0.8          # m — obstacles detected, engage VFF
-    narrow_threshold: 0.5           # m — side obstacles = narrow passage
-    avoid_threshold: 0.35           # m — front obstacle very close, hard avoid
-    dead_end_threshold: 0.5         # m — front+left+right blocked = dead end
-    critical_threshold: 0.2         # m — imminent collision
+    # Tuned for confident driving: the robot stays in FREE_ROAM until something
+    # is genuinely close (~40cm) and only hard-turns when a wall is within 30cm
+    # directly ahead. Distant obstacles (1m+) are ignored for steering.
+    free_roam_threshold: 1.2        # m — currently unused in code; kept for reference
+    careful_threshold: 0.4          # m — engage VFF only when an obstacle is within 40cm
+    narrow_threshold: 0.35          # m — narrow passage when both sides < 35cm
+    avoid_threshold: 0.30           # m — hard turn when front sector reads under 30cm
+    dead_end_threshold: 0.35        # m — dead-end when front+left+right all < 35cm
+    critical_threshold: 0.2         # m — imminent collision (zero forward in AVOIDING)
 
     # --- VFF (Virtual Force Field) parameters ---
     drive_gain: 1.0                 # forward driving force magnitude
     repulsive_gain: 0.8             # repulsive force gain
-    influence_distance: 1.5         # m — obstacles beyond this exert no force
+    # Reduced from 1.5 -> 0.5: VFF only pushes away from things within 50cm.
+    # Distant walls and clutter no longer drag the steering off-course.
+    influence_distance: 0.5         # m — obstacles beyond this exert no force
     damping: 0.3                    # velocity smoothing factor (0=no smoothing, 1=full)
 
     # --- Exploration ---

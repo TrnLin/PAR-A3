@@ -172,8 +172,13 @@ class ReactiveNavigatorNode(Node):
         return idx * self.sector_width
 
     def _front_min(self) -> float:
-        """Minimum distance in the front sectors (11, 0, 1)."""
-        return min(self.sectors[11], self.sectors[0], self.sectors[1])
+        """Minimum distance directly ahead (sector 0 only, +/-15 degrees).
+
+        Narrowed from a +/-45 degree cone (sectors 11/0/1) so that the
+        diagonal beams that hit hallway side walls don't masquerade as a
+        front obstacle. Side wedges still feed CAREFUL/VFF via min(sectors).
+        """
+        return self.sectors[0]
 
     def _left_min(self) -> float:
         """Minimum distance in the left sectors (2, 3)."""
