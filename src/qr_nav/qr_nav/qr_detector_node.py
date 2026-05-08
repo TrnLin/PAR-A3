@@ -9,6 +9,7 @@ import json
 import time
 
 import cv2
+import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
@@ -207,9 +208,21 @@ class QRDetectorNode(Node):
             if not content:
                 continue
 
-            # Compute bounding box area from the corner points
-            bbox_points = points[i]
-            bbox_area = cv2.contourArea(bbox_points.astype(float))
+            # Compute bounding box area from the corner points.
+            # cv2.contourArea on OpenCV 4.6 (ROS 2 Jazzy default) requires
+            # CV_32F or CV_32S — np.float64 (the default for .astype(float))
+            # raises (-215:Assertion failed) depth == CV_32F || CV_32S.
+            # Wrap in try/except so a single malformed detection becomes a
+            # warning instead of crashing the node (and stranding the robot).
+            try:
+                bbox_points = np.asarray(points[i], dtype=np.float32)
+                bbox_area = cv2.contourArea(bbox_points)
+            except Exception as e:
+                self.get_logger().warn(
+                    f'Skipping detection {i!r}={content!r}: bbox area calc '
+                    f'failed ({e})'
+                )
+                continue
 
             detections.append((content.strip(), bbox_area))
 
