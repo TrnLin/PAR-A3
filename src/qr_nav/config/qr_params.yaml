@@ -5,23 +5,32 @@
 qr_detector:
   ros__parameters:
     # --- Camera topic ---
-    rgb_image_topic: "/camera/camera/color/image_raw"
+    # Husarion ROSbot 3 PRO publishes the OAK-D RGB stream under /oak/...
+    # NOT the depthai-ros default /camera/camera/.../image_raw namespace.
+    # Verified on the robot via `ros2 topic list | grep oak`.
+    rgb_image_topic: "/oak/rgb/image_raw"
 
     # --- Detection ---
-    detection_rate_hz: 15.0         # Hz — frame processing rate
-    min_bbox_area: 500              # pixels — ignore tiny QR detections
-    command_cooldown: 1.0           # seconds — debounce same command
+    detection_rate_hz: 15.0 # Hz — frame processing rate
+    min_bbox_area: 500 # pixels — ignore tiny QR detections
+    command_cooldown: 1.0 # seconds — debounce same command
+
+    # --- QoS ---
+    # The OAK-D publisher on Husarion uses RELIABLE / VOLATILE (verified via
+    # `ros2 topic info /oak/rgb/image_raw -v`). A BEST_EFFORT subscriber
+    # against a RELIABLE publisher will silently receive zero callbacks.
+    image_qos_reliability: "reliable" # "reliable" or "best_effort"
 
 command_interpreter:
   ros__parameters:
     # --- Speed ---
     # First-run safety profile: half the demo speeds. Re-tune for the demo
     # only after Phase 4 is clean (see plan / README).
-    cruise_speed: 0.08              # m/s — base forward speed (demo: 0.2)
-    turn_speed: 0.4                 # rad/s — angular velocity for turns (demo: 0.8)
-    speed_increment: 0.05           # m/s — SPEED_UP / SPEED_DOWN step
-    min_speed: 0.05                 # m/s — floor for SPEED_DOWN
-    max_speed: 0.4                  # m/s — ceiling for SPEED_UP
+    cruise_speed: 0.08 # m/s — base forward speed (demo: 0.2)
+    turn_speed: 0.4 # rad/s — angular velocity for turns (demo: 0.8)
+    speed_increment: 0.05 # m/s — SPEED_UP / SPEED_DOWN step
+    min_speed: 0.05 # m/s — floor for SPEED_DOWN
+    max_speed: 0.4 # m/s — ceiling for SPEED_UP
 
     # --- Turn durations ---
     # MUST be re-derived whenever turn_speed changes:
@@ -29,15 +38,15 @@ command_interpreter:
     #   180° ≈ 3.1416 rad  →  duration = 3.1416 / turn_speed
     # At turn_speed=0.4 rad/s this gives ≈ 3.93 s and 7.85 s. Rounded up
     # slightly to compensate for spin-up / friction on first revolution.
-    turn_90_duration: 4.0           # seconds for 90° turn (demo @ 0.8 rad/s: 2.0)
-    turn_180_duration: 8.0          # seconds for 180° turn (demo @ 0.8 rad/s: 4.0)
+    turn_90_duration: 4.0 # seconds for 90° turn (demo @ 0.8 rad/s: 2.0)
+    turn_180_duration: 8.0 # seconds for 180° turn (demo @ 0.8 rad/s: 4.0)
 
     # --- Timing ---
-    control_rate_hz: 20.0           # Hz
+    control_rate_hz: 20.0 # Hz
     # Tightened from 5.0 → 3.0 so the robot drops to RECOVERING (slow creep)
     # faster if vision drops out. Note: RECOVERING still moves at min_speed,
     # it is NOT a full stop. See Phase 5 of the plan.
-    recovery_timeout: 3.0           # seconds — enter RECOVERING if no QR command (demo: 5.0)
+    recovery_timeout: 3.0 # seconds — enter RECOVERING if no QR command (demo: 5.0)
 
 qr_logger:
   ros__parameters:

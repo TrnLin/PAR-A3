@@ -36,14 +36,22 @@ class QRDetectorNode(Node):
         super().__init__('qr_detector_node')
 
         # Declare parameters
-        self.declare_parameter('rgb_image_topic', '/camera/camera/color/image_raw')
+        # Default topic = ROSbot 3 PRO / Husarion OAK-D namespace.
+        self.declare_parameter('rgb_image_topic', '/oak/rgb/image_raw')
         self.declare_parameter('detection_rate_hz', 15.0)
         self.declare_parameter('min_bbox_area', 500)
+        # Camera QoS reliability must match the publisher, otherwise the
+        # subscriber silently receives zero frames. Husarion's OAK-D ships
+        # RELIABLE; some other depthai launches use BEST_EFFORT.
+        self.declare_parameter('image_qos_reliability', 'reliable')
 
         # Read parameters
         rgb_topic = self.get_parameter('rgb_image_topic').get_parameter_value().string_value
         detection_rate_hz = self.get_parameter('detection_rate_hz').get_parameter_value().double_value
         self.min_bbox_area = self.get_parameter('min_bbox_area').get_parameter_value().integer_value
+        qos_reliability_str = (
+            self.get_parameter('image_qos_reliability').get_parameter_value().string_value
+        ).strip().lower()
 
         # CV bridge and QR detector
         self.bridge = CvBridge()
@@ -57,10 +65,25 @@ class QRDetectorNode(Node):
         self.detection_period = 1.0 / detection_rate_hz
         self.last_detection_time = 0.0
 
-        # QoS for OAK-D Pro camera: BEST_EFFORT reliability, VOLATILE durability
+        # Camera QoS — reliability is parameterised (image_qos_reliability)
+        # because it MUST match the publisher or the subscriber gets zero
+        # callbacks. Husarion's OAK-D ships RELIABLE / VOLATILE (verified
+        # with `ros2 topic info /oak/rgb/image_raw -v`); other depthai
+        # launches sometimes publish BEST_EFFORT.
+        if qos_reliability_str == 'best_effort':
+            reliability = ReliabilityPolicy.BEST_EFFORT
+        elif qos_reliability_str == 'reliable':
+            reliability = ReliabilityPolicy.RELIABLE
+        else:
+            self.get_logger().warn(
+                f'Unknown image_qos_reliability={qos_reliability_str!r}; '
+                f'defaulting to RELIABLE.'
+            )
+            reliability = ReliabilityPolicy.RELIABLE
+
         camera_qos = QoSProfile(
             depth=10,
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=reliability,
             durability=DurabilityPolicy.VOLATILE,
         )
 
@@ -78,7 +101,8 @@ class QRDetectorNode(Node):
 
         self.get_logger().info(
             f'QR Detector Node started — topic: {rgb_topic}, '
-            f'rate: {detection_rate_hz} Hz, min_bbox_area: {self.min_bbox_area}'
+            f'rate: {detection_rate_hz} Hz, min_bbox_area: {self.min_bbox_area}, '
+            f'qos: {reliability.name}'
         )
 
     def image_callback(self, msg: Image):
