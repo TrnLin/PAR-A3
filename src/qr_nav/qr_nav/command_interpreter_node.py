@@ -11,7 +11,10 @@ import time
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from geometry_msgs.msg import Twist
+# Husarion ROSbot 3 PRO + ROS 2 Jazzy use TwistStamped on /cmd_vel
+# (verified via `ros2 topic info /cmd_vel`). Publishing plain Twist results
+# in a silent type mismatch and the base controller ignores us.
+from geometry_msgs.msg import TwistStamped
 
 
 class State:
@@ -68,8 +71,11 @@ class CommandInterpreterNode(Node):
         )
 
         # Publishers
-        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel', 10)
         self.nav_state_pub = self.create_publisher(String, '/nav_state', 10)
+        # Frame for the stamped twist. Husarion's controller doesn't strictly
+        # check this, but rep-105 says base_link is the body frame.
+        self.cmd_vel_frame_id = 'base_link'
 
         # Control loop timer
         control_period = 1.0 / control_rate_hz
@@ -203,11 +209,13 @@ class CommandInterpreterNode(Node):
         self.nav_state_pub.publish(state_msg)
 
     def _publish_velocity(self, linear_x: float, angular_z: float):
-        """Publish a Twist message to /cmd_vel."""
-        twist = Twist()
-        twist.linear.x = linear_x
-        twist.angular.z = angular_z
-        self.cmd_vel_pub.publish(twist)
+        """Publish a TwistStamped message to /cmd_vel."""
+        msg = TwistStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.cmd_vel_frame_id
+        msg.twist.linear.x = linear_x
+        msg.twist.angular.z = angular_z
+        self.cmd_vel_pub.publish(msg)
 
     def control_loop(self):
         """Main control loop — runs at control_rate_hz."""
@@ -256,8 +264,10 @@ def main(args=None):
         pass
     finally:
         # Stop the robot on shutdown
-        twist = Twist()
-        node.cmd_vel_pub.publish(twist)
+        stop_msg = TwistStamped()
+        stop_msg.header.stamp = node.get_clock().now().to_msg()
+        stop_msg.header.frame_id = node.cmd_vel_frame_id
+        node.cmd_vel_pub.publish(stop_msg)
         node.get_logger().info('Shutting down — stopping robot')
         node.destroy_node()
         rclpy.shutdown()

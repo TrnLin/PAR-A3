@@ -15,7 +15,9 @@ from datetime import datetime
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from geometry_msgs.msg import Twist
+# /cmd_vel on Husarion ROSbot 3 PRO is TwistStamped (Jazzy convention).
+# Subscribing with plain Twist would silently never receive callbacks.
+from geometry_msgs.msg import TwistStamped
 
 
 class DataLoggerNode(Node):
@@ -82,7 +84,7 @@ class DataLoggerNode(Node):
             String, '/nav_state', self.nav_state_callback, 10
         )
         self.cmd_vel_sub = self.create_subscription(
-            Twist, '/cmd_vel', self.cmd_vel_callback, 10
+            TwistStamped, '/cmd_vel', self.cmd_vel_callback, 10
         )
 
         # Logging timer
@@ -117,10 +119,10 @@ class DataLoggerNode(Node):
         self.last_state = msg.data
         self.last_state_time = now
 
-    def cmd_vel_callback(self, msg: Twist):
+    def cmd_vel_callback(self, msg: TwistStamped):
         """Handle velocity command updates."""
-        self.latest_cmd_linear_x = msg.linear.x
-        self.latest_cmd_angular_z = msg.angular.z
+        self.latest_cmd_linear_x = msg.twist.linear.x
+        self.latest_cmd_angular_z = msg.twist.angular.z
 
     def log_tick(self):
         """Write a row to the CSV at the configured rate."""
