@@ -96,6 +96,17 @@ All parameters in `config/qr_params.yaml`:
 | `recovery_timeout` | 5.0 s | Time before entering RECOVERING |
 | `min_bbox_area` | 500 px | Ignore tiny QR detections |
 
+## Printable Test Cards
+
+Generate one A4 card per command (PNGs + a combined PDF) using:
+
+```bash
+pip install 'qrcode[pil]' Pillow
+python tools/generate_qr_cards.py
+```
+
+Outputs land in `qr_cards/` at the repo root. The script extracts `VALID_COMMANDS` directly from `qr_detector_node.py` via AST, so the printed strings can never silently drift from what the detector accepts. Print at 100% scale (no "fit to page") to keep the QR side ~12 cm.
+
 ## File Structure
 
 ```
@@ -111,4 +122,7 @@ src/qr_nav/
 │   ├── command_interpreter_node.py    # FSM + velocity mapping
 │   └── data_logger_node.py           # CSV logging
 └── README.md
+
+tools/
+└── generate_qr_cards.py               # Printable QR cards (Phase 0)
 ```

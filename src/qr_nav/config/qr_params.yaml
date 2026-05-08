@@ -15,19 +15,29 @@ qr_detector:
 command_interpreter:
   ros__parameters:
     # --- Speed ---
-    cruise_speed: 0.2               # m/s — base forward speed
-    turn_speed: 0.8                 # rad/s — angular velocity for turns
+    # First-run safety profile: half the demo speeds. Re-tune for the demo
+    # only after Phase 4 is clean (see plan / README).
+    cruise_speed: 0.08              # m/s — base forward speed (demo: 0.2)
+    turn_speed: 0.4                 # rad/s — angular velocity for turns (demo: 0.8)
     speed_increment: 0.05           # m/s — SPEED_UP / SPEED_DOWN step
     min_speed: 0.05                 # m/s — floor for SPEED_DOWN
     max_speed: 0.4                  # m/s — ceiling for SPEED_UP
 
     # --- Turn durations ---
-    turn_90_duration: 2.0           # seconds for 90° turn (TURN_LEFT / TURN_RIGHT)
-    turn_180_duration: 4.0          # seconds for 180° turn (U_TURN)
+    # MUST be re-derived whenever turn_speed changes:
+    #   90°  ≈ 1.5708 rad  →  duration = 1.5708 / turn_speed
+    #   180° ≈ 3.1416 rad  →  duration = 3.1416 / turn_speed
+    # At turn_speed=0.4 rad/s this gives ≈ 3.93 s and 7.85 s. Rounded up
+    # slightly to compensate for spin-up / friction on first revolution.
+    turn_90_duration: 4.0           # seconds for 90° turn (demo @ 0.8 rad/s: 2.0)
+    turn_180_duration: 8.0          # seconds for 180° turn (demo @ 0.8 rad/s: 4.0)
 
     # --- Timing ---
     control_rate_hz: 20.0           # Hz
-    recovery_timeout: 5.0           # seconds — enter RECOVERING if no QR command
+    # Tightened from 5.0 → 3.0 so the robot drops to RECOVERING (slow creep)
+    # faster if vision drops out. Note: RECOVERING still moves at min_speed,
+    # it is NOT a full stop. See Phase 5 of the plan.
+    recovery_timeout: 3.0           # seconds — enter RECOVERING if no QR command (demo: 5.0)
 
 qr_logger:
   ros__parameters:
