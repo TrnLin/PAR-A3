@@ -74,6 +74,16 @@ reactive_navigator:
     dynamic_obstacle_margin: 0.6    # m — extra clearance for dynamic obstacles
     dynamic_avoidance_gain: 1.5     # multiplier on repulsive force for dynamic obstacles
 
+    # --- AVOIDING-state tuning (anti-spin) ---
+    # Once AVOIDING picks a turn direction, hold it for this long before
+    # re-evaluating which side has more space. Prevents direction-flip
+    # oscillation that causes the robot to spin in place.
+    avoiding_commit_time: 1.5       # seconds
+    avoiding_angular_speed: 0.9     # rad/s — slower than max so linear can carry
+    avoiding_linear_speed: 0.08     # m/s — actually move forward while turning
+    # If AVOIDING persists this long, force dead-end recovery (back up + rotate)
+    avoiding_timeout: 6.0           # seconds
+
     # --- Control rate ---
     control_rate_hz: 20.0           # Hz
 

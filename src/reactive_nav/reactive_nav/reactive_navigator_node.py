@@ -74,6 +74,14 @@ class ReactiveNavigatorNode(Node):
         self.declare_parameter('dynamic_obstacle_margin', 0.6)
         self.declare_parameter('dynamic_avoidance_gain', 1.5)
         self.declare_parameter('control_rate_hz', 20.0)
+        # AVOIDING-state tuning: prevents directional oscillation by committing
+        # to one turn direction long enough to actually clear the obstacle.
+        self.declare_parameter('avoiding_commit_time', 1.5)
+        self.declare_parameter('avoiding_angular_speed', 0.9)
+        self.declare_parameter('avoiding_linear_speed', 0.08)
+        # If AVOIDING persists this long, force a dead-end recovery to break
+        # the cycle — "I've been turning for ages and still see obstacles".
+        self.declare_parameter('avoiding_timeout', 6.0)
 
         # Cache parameters
         self.max_lin = self.get_parameter('max_linear_speed').value
@@ -99,6 +107,10 @@ class ReactiveNavigatorNode(Node):
         self.dyn_margin = self.get_parameter('dynamic_obstacle_margin').value
         self.dyn_gain = self.get_parameter('dynamic_avoidance_gain').value
         rate_hz = self.get_parameter('control_rate_hz').value
+        self.avoiding_commit_time = self.get_parameter('avoiding_commit_time').value
+        self.avoiding_ang = self.get_parameter('avoiding_angular_speed').value
+        self.avoiding_lin = self.get_parameter('avoiding_linear_speed').value
+        self.avoiding_timeout = self.get_parameter('avoiding_timeout').value
 
         # --- State ---
         self.state = NavigatorState.FREE_ROAM
@@ -119,6 +131,10 @@ class ReactiveNavigatorNode(Node):
         self.recovery_start = None
         self.recovery_phase = None  # 'backup' or 'rotate'
         self.rotate_direction = 1.0
+
+        # Avoiding-state commitment (prevents direction-flip oscillation)
+        self.avoiding_start = None        # time we entered AVOIDING
+        self.avoiding_direction = 0.0     # +1 = turn left, -1 = turn right, 0 = uncommitted
 
         # --- Subscribers ---
         self.create_subscription(
@@ -180,11 +196,30 @@ class ReactiveNavigatorNode(Node):
         front = self._front_min()
         left = self._left_min()
         right = self._right_min()
+        now = time.time()
 
         # Stay in DEAD_END_RECOVERY until the manoeuvre completes
         if self.state == NavigatorState.DEAD_END_RECOVERY:
             if self.recovery_phase is not None:
                 return  # let the recovery run
+
+        # Stuck in AVOIDING for too long → escalate to dead-end recovery to
+        # break the cycle. This handles the case where the robot is in a
+        # corner / cul-de-sac and pure rotation isn't enough.
+        if (self.state == NavigatorState.AVOIDING and
+                self.avoiding_start is not None and
+                now - self.avoiding_start > self.avoiding_timeout):
+            self.state = NavigatorState.DEAD_END_RECOVERY
+            self.recovery_start = now
+            self.recovery_phase = 'backup'
+            self.rotate_direction = 1.0 if left > right else -1.0
+            self.avoiding_start = None
+            self.avoiding_direction = 0.0
+            self.get_logger().info(
+                f'AVOIDING timed out after {self.avoiding_timeout:.1f}s '
+                f'— forcing dead-end recovery'
+            )
+            return
 
         # Dead-end: front + left + right all blocked
         if (front < self.dead_end_thresh and
@@ -192,17 +227,30 @@ class ReactiveNavigatorNode(Node):
                 right < self.dead_end_thresh):
             if self.state != NavigatorState.DEAD_END_RECOVERY:
                 self.state = NavigatorState.DEAD_END_RECOVERY
-                self.recovery_start = time.time()
+                self.recovery_start = now
                 self.recovery_phase = 'backup'
-                # Rotate toward the side with more space
                 self.rotate_direction = 1.0 if left > right else -1.0
+                self.avoiding_start = None
+                self.avoiding_direction = 0.0
                 self.get_logger().info('DEAD_END detected — starting recovery')
             return
 
         # Avoiding: front critically close
         if front < self.avoid_thresh:
+            if self.state != NavigatorState.AVOIDING:
+                self.avoiding_start = now
+                self.avoiding_direction = 0.0  # reset; will pick on first tick
+                self.get_logger().info(
+                    f'AVOIDING engaged (front={front:.2f}m)'
+                )
             self.state = NavigatorState.AVOIDING
             return
+
+        # We've cleared the front threshold — wipe AVOIDING state
+        if self.state == NavigatorState.AVOIDING:
+            self.avoiding_start = None
+            self.avoiding_direction = 0.0
+            self.get_logger().info(f'AVOIDING cleared (front={front:.2f}m)')
 
         # Narrow passage: sides close but front relatively clear
         if (left < self.narrow_thresh and right < self.narrow_thresh and
@@ -327,23 +375,45 @@ class ReactiveNavigatorNode(Node):
         return self.narrow_speed, angular
 
     def _avoiding(self) -> tuple:
-        """Front is critically close — hard turn away from nearest front obstacle."""
-        # Determine which front side is more blocked
-        left_front = min(self.sectors[1], self.sectors[2])
-        right_front = min(self.sectors[10], self.sectors[11])
+        """Front is critically close — turn away while creeping forward.
 
-        # Turn away from the closer side
-        if left_front < right_front:
-            angular = -self.max_ang  # turn right
-        else:
-            angular = self.max_ang   # turn left
-
-        # Very slow forward (or zero if extremely close)
+        Direction commitment: once we pick a turn direction, we hold it for
+        `avoiding_commit_time` seconds. Otherwise the robot oscillates because
+        rotating shifts which side reads as "closer", causing the decision to
+        flip every few ticks.
+        """
+        now = time.time()
         front = self._front_min()
+
+        # Pick (or refresh) a turn direction
+        commit_expired = (
+            self.avoiding_start is None or
+            now - self.avoiding_start > self.avoiding_commit_time
+        )
+        if self.avoiding_direction == 0.0 or commit_expired:
+            left_front = min(self.sectors[1], self.sectors[2])
+            right_front = min(self.sectors[10], self.sectors[11])
+            # Tie-break with a small bias so we don't toggle on equal reads
+            if left_front + 0.05 < right_front:
+                self.avoiding_direction = -1.0  # obstacle on left → turn right
+            elif right_front + 0.05 < left_front:
+                self.avoiding_direction = 1.0   # obstacle on right → turn left
+            else:
+                # Symmetric blockage — keep previous direction if any, else
+                # randomly pick one to avoid deadlock
+                if self.avoiding_direction == 0.0:
+                    self.avoiding_direction = 1.0 if random.random() > 0.5 else -1.0
+            self.avoiding_start = now
+
+        angular = self.avoiding_direction * self.avoiding_ang
+
+        # Forward motion: zero only if extremely close. Otherwise creep
+        # forward at avoiding_lin so the robot actually escapes the obstacle
+        # rather than just rotating in place.
         if front < self.critical_thresh:
             linear = 0.0
         else:
-            linear = self.min_lin
+            linear = self.avoiding_lin
 
         return linear, angular
 
