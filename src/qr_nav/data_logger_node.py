@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Data Logger Node for QR Code Navigation (Project A).
 
 Subscribes to QR detection, command, navigation state, and velocity topics.

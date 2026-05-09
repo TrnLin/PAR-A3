@@ -9,6 +9,11 @@
     commands in real time using a finite state machine.
   </description>
   <maintainer email="lintran@nvidia.com">Lin Tran</maintainer>
+
+  <author email="s3999925@rmit.edu.vn">Hoang Minh Thang</author>
+  <author email="s3999568@rmit.edu.vn">Truong Ba An</author>
+  <author email="s4043097@rmit.edu.vn">Tran Hoang Linh</author>
+
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>

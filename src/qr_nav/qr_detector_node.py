@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """QR Code Detector Node for ROSbot 3 PRO with OAK-D Pro camera.
 
 Detects and decodes QR codes from camera images, validates commands,

@@ -2,7 +2,7 @@ import os
 from glob import glob
 from setuptools import find_packages, setup
 
-package_name = 'reactive_nav'
+package_name = 'qr_nav'
 
 setup(
     name=package_name,
@@ -19,17 +19,16 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='Lin Tran',
+    maintainer='Tran Hoang Linh, Truong Ba An, Hoang Minh Thang',
     maintainer_email='lintran@nvidia.com',
-    description='Reactive autonomous navigation with obstacle avoidance for ROSbot 3 PRO',
+    description='QR Code Command Navigation for ROSbot 3 PRO',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'sensor_fusion = reactive_nav.sensor_fusion_node:main',
-            'reactive_navigator = reactive_nav.reactive_navigator_node:main',
-            'safety_monitor = reactive_nav.safety_monitor_node:main',
-            'data_logger = reactive_nav.data_logger_node:main',
+            'qr_detector = qr_nav.qr_detector_node:main',
+            'command_interpreter = qr_nav.command_interpreter_node:main',
+            'qr_logger = qr_nav.data_logger_node:main',
         ],
     },
 )

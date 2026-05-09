@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate printable QR-code command cards for the qr_nav package.
 
 Reads the canonical command list directly from
@@ -36,11 +35,11 @@ from PIL import Image, ImageDraw, ImageFont
 Image.init()
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-DETECTOR_SOURCE = REPO_ROOT / "src" / "qr_nav" / "qr_nav" / "qr_detector_node.py"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+DETECTOR_SOURCE = REPO_ROOT / "src" / "qr_nav" / "qr_detector_node.py"
 OUTPUT_DIR = REPO_ROOT / "qr_cards"
 
-# A4 portrait at 150 DPI -> 1240 x 1754 px. Plenty for printing.
+# A4 portrait at 150 DPI -> 1240 x 1754 px.
 A4_PX = (1240, 1754)
 QR_SIDE_PX = 720           # ~12 cm at 150 DPI
 LABEL_HEIGHT_PX = 220

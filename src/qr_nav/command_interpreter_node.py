@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Command Interpreter Node with Finite State Machine for QR Code Navigation.
 
 Receives validated QR commands and translates them into velocity commands
