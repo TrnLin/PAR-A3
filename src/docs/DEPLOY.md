@@ -118,11 +118,10 @@ If the detector crashes with `(-215:Assertion failed) depth == CV_32F || CV_32S`
 
 ## 4. Stage 2 — Full launch, motors diverted
 
-Robot can be on the floor — `/cmd_vel` is remapped to `/cmd_vel_dummy`, so the base controller never sees our messages.
+Robot can be on the floor — `/cmd_vel` is remapped to `/cmd_vel_dummy` via the `cmd_vel_topic` launch argument, so the base controller never sees our messages. (Note: `ros2 launch` does not accept `--ros-args --remap` directly; remaps have to come through a declared launch argument — see [`qr_nav.launch.py`](launch/qr_nav.launch.py).)
 
 ```bash
-ros2 launch qr_nav qr_nav.launch.py \
-  --ros-args --remap /cmd_vel:=/cmd_vel_dummy
+ros2 launch qr_nav qr_nav.launch.py cmd_vel_topic:=/cmd_vel_dummy
 ```
 
 Two more sessions:
@@ -240,7 +239,7 @@ These are the raw data for the report's "Detection accuracy" and "Command execut
 | Manual teleop (Jazzy stamped)               | `ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p stamped:=true`                              |
 | Manual one-shot e-stop                      | `ros2 topic pub --once /cmd_vel geometry_msgs/msg/TwistStamped '{header: {frame_id: base_link}}'`              |
 | Full launch, motors live                    | `ros2 launch qr_nav qr_nav.launch.py`                                                                          |
-| Full launch, motors diverted                | `ros2 launch qr_nav qr_nav.launch.py --ros-args --remap /cmd_vel:=/cmd_vel_dummy`                              |
+| Full launch, motors diverted                | `ros2 launch qr_nav qr_nav.launch.py cmd_vel_topic:=/cmd_vel_dummy`                                            |
 | Pull logs to laptop                         | `scp 'husarion@192.168.1.150:/tmp/qr_nav_logs/qr_log_*.csv' ./logs/`                                           |
 
 ---
