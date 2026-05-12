@@ -135,15 +135,18 @@ Walk through this script with the cards. Every message has a `header` block (`st
 
 | Card you show              | Expected `/cmd_vel_dummy` `twist`                | Expected `/nav_state`           |
 | -------------------------- | ------------------------------------------------ | ------------------------------- |
-| (none, just launched)      | `linear.x=0.08, angular.z=0.0`                   | `DRIVING`                       |
+| (none, just launched)      | `0.0, 0.0`                                       | `IDLE`                          |
+| `GO` (first card)          | `0.08, 0.0`                                      | `IDLE` → `DRIVING`              |
 | `STOP`                     | `0.0, 0.0`                                       | `STOPPED`                       |
 | `TURN_LEFT` (while STOPPED)| (no change)                                      | (ignored — STOPPED only takes GO) |
-| `GO`                       | `0.08, 0.0`                                      | `DRIVING`                       |
+| `GO` (while STOPPED)       | `0.08, 0.0`                                      | `STOPPED` → `DRIVING`           |
 | `TURN_LEFT`                | `0.0, +0.4` for 4 s, then back to `0.08, 0.0`    | `TURNING` → `DRIVING`           |
 | `TURN_RIGHT`               | `0.0, -0.4` for 4 s                              | `TURNING` → `DRIVING`           |
 | `U_TURN`                   | `0.0, +0.4` for 8 s                              | `TURNING` → `DRIVING`           |
 | `SPEED_UP`                 | `0.13, 0.0`                                      | `DRIVING`                       |
 | `SPEED_DOWN`               | back to `0.08, 0.0`                              | `DRIVING`                       |
+
+If you show a turn card or `SPEED_UP`/`SPEED_DOWN` as the *first* card out of `IDLE`, the FSM executes the command and ends in `DRIVING` — `IDLE` only protects against motion until the operator deliberately arms the bot.
 
 If any line in the table fails, fix it before letting wheels move.
 
@@ -179,25 +182,25 @@ Repeat until 90° is repeatable. Then re-derive `turn_180_duration = 2 × turn_9
 
 - Full battery (open-loop turns drift with battery sag)
 - Clear floor, no fragile obstacles in the projected drive path
-- `GO` card in your pocket (manual STOPPED-trap unlocker)
+- `GO` card in your pocket (also arms the bot out of `IDLE` on launch, and unlocks `STOPPED`)
 - Teleop terminal open as e-stop:
 
 ```bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p stamped:=true
 ```
 
-Lay out **one** `STOP` card 1 m in front of the robot. Launch:
+Launch:
 
 ```bash
 ros2 launch qr_nav qr_nav.launch.py
 ```
 
-Robot drives forward at 0.08 m/s, sees `STOP`, halts, sits in `STOPPED`. Show `GO` to release.
+The robot boots in `IDLE` and **does not move** — `/nav_state` reports `IDLE`, `/cmd_vel` carries zero `twist`. Show a `GO` card to arm it at cruise speed; it then behaves exactly like Stage 2's `DRIVING` flow. Show `STOP` (or let it see a `STOP` card you've placed in its path) to halt; show `GO` to release from `STOPPED`.
 
 Then escalate:
 
-1. `STOP` → `GO` (recovery from STOPPED works)
-2. `STOP` → `GO` → `TURN_LEFT` → `STOP` (turn integrated into a sequence)
+1. `GO` (arm from IDLE) → `STOP` → `GO` (recovery from STOPPED works)
+2. `GO` → `TURN_LEFT` → `STOP` (turn integrated into a sequence)
 3. Multi-card course of your design — keep cards ≥ 1 m apart so only one is in frame at a time
 4. Final test: hold two different cards in one frame to validate the largest-bbox tiebreak in [`qr_detector_node.py`](qr_nav/qr_detector_node.py) `_detect_qr_codes`
 

@@ -1,8 +1,12 @@
 """Command Interpreter Node with Finite State Machine for QR Code Navigation.
 
 Receives validated QR commands and translates them into velocity commands
-for the ROSbot 3 PRO using an FSM with DRIVING, TURNING, STOPPED,
+for the ROSbot 3 PRO using an FSM with IDLE, DRIVING, TURNING, STOPPED,
 and RECOVERING states.
+
+The FSM boots into IDLE (zero velocity) and stays there until the first
+valid QR command arrives — so the robot never moves on launch alone. IDLE
+accepts any command; STOPPED still accepts only GO (operator-driven halt).
 """
 
 import time
@@ -18,6 +22,7 @@ from geometry_msgs.msg import TwistStamped
 
 class State:
     """FSM state constants."""
+    IDLE = 'IDLE'
     DRIVING = 'DRIVING'
     TURNING = 'TURNING'
     STOPPED = 'STOPPED'
@@ -52,8 +57,9 @@ class CommandInterpreterNode(Node):
         control_rate_hz = self.get_parameter('control_rate_hz').get_parameter_value().double_value
         self.recovery_timeout = self.get_parameter('recovery_timeout').get_parameter_value().double_value
 
-        # FSM state
-        self.state = State.DRIVING
+        # FSM state — boot stationary so launching the stack never moves
+        # the robot on its own. First valid QR command exits IDLE.
+        self.state = State.IDLE
         self.last_command_time = time.time()
 
         # Turn tracking
@@ -86,7 +92,8 @@ class CommandInterpreterNode(Node):
         self.get_logger().info(
             f'Command Interpreter Node started — state: {self.state}, '
             f'cruise_speed: {self.cruise_speed} m/s, '
-            f'control_rate: {control_rate_hz} Hz'
+            f'control_rate: {control_rate_hz} Hz. '
+            f'Show any QR card to arm.'
         )
 
     def command_callback(self, msg: String):
@@ -121,7 +128,8 @@ class CommandInterpreterNode(Node):
                 )
             return
 
-        # Process commands in DRIVING or RECOVERING state
+        # IDLE, DRIVING, RECOVERING all accept any command: fall through.
+        # (STOPPED was already handled above; TURNING ignores commands.)
         self._execute_command(command)
 
     def _execute_command(self, command: str):
@@ -219,6 +227,12 @@ class CommandInterpreterNode(Node):
     def control_loop(self):
         """Main control loop — runs at control_rate_hz."""
         now = time.time()
+
+        if self.state == State.IDLE:
+            # Stationary, waiting for the first QR command. No recovery
+            # timeout here — IDLE is meant to be held indefinitely.
+            self._publish_velocity(0.0, 0.0)
+            return
 
         if self.state == State.DRIVING:
             self._publish_velocity(self.cruise_speed, 0.0)
