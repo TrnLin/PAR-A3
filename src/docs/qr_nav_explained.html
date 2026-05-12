@@ -1,0 +1,1470 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>qr_nav — From Code to Robot</title>
+<style>
+  /* ---------- Design tokens ---------- */
+  :root {
+    --bg:            #0b0d10;
+    --bg-elev:       #14171c;
+    --bg-elev-2:     #1a1e25;
+    --line:          #232934;
+    --line-soft:     #1c2129;
+    --ink:           #e8ecf2;
+    --ink-dim:       #aab2bf;
+    --ink-mute:      #6f7889;
+    --accent:        #76b900;       /* NVIDIA-ish green */
+    --accent-soft:   rgba(118,185,0,0.14);
+    --accent-line:   rgba(118,185,0,0.35);
+    --blue:          #4ea3ff;
+    --blue-soft:     rgba(78,163,255,0.14);
+    --amber:         #ffb84d;
+    --amber-soft:    rgba(255,184,77,0.14);
+    --red:           #ff6b6b;
+    --red-soft:      rgba(255,107,107,0.14);
+    --violet:        #b48cff;
+    --violet-soft:   rgba(180,140,255,0.14);
+    --mono:          ui-monospace, "JetBrains Mono", "SF Mono", Menlo,
+                     Consolas, "Liberation Mono", monospace;
+    --sans:          -apple-system, BlinkMacSystemFont, "Segoe UI", Inter,
+                     Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---------- Layout ---------- */
+  .layout {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    max-width: 1280px;
+    margin: 0 auto;
+    gap: 56px;
+    padding: 0 32px;
+  }
+  @media (max-width: 960px) {
+    .layout { grid-template-columns: 1fr; padding: 0 20px; gap: 0; }
+    .toc { position: static !important; max-height: none !important; }
+  }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    padding: 96px 0 56px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 56px;
+    max-width: 1280px;
+    margin-left: auto; margin-right: auto;
+    padding-left: 32px; padding-right: 32px;
+  }
+  .hero .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    padding: 6px 12px;
+    border-radius: 999px;
+    margin-bottom: 24px;
+  }
+  .hero h1 {
+    font-size: clamp(36px, 5.4vw, 64px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin: 0 0 18px;
+    font-weight: 700;
+  }
+  .hero h1 .accent { color: var(--accent); }
+  .hero .lede {
+    font-size: clamp(17px, 1.6vw, 20px);
+    color: var(--ink-dim);
+    max-width: 760px;
+    margin: 0 0 32px;
+  }
+  .hero .meta {
+    display: flex; flex-wrap: wrap; gap: 10px;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-dim);
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 11px;
+  }
+  .chip .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+  }
+
+  /* ---------- TOC ---------- */
+  .toc {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    padding-right: 8px;
+  }
+  .toc-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin: 0 0 14px;
+  }
+  .toc ol {
+    list-style: none;
+    padding: 0; margin: 0;
+    counter-reset: tocnum;
+  }
+  .toc li {
+    counter-increment: tocnum;
+    margin: 0;
+  }
+  .toc a {
+    display: block;
+    padding: 7px 12px 7px 40px;
+    border-left: 2px solid transparent;
+    color: var(--ink-dim);
+    font-size: 13.5px;
+    line-height: 1.4;
+    position: relative;
+    transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  }
+  .toc a::before {
+    content: counter(tocnum, decimal-leading-zero);
+    position: absolute;
+    left: 12px;
+    color: var(--ink-mute);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .toc a:hover {
+    color: var(--ink);
+    text-decoration: none;
+    background: var(--bg-elev);
+  }
+  .toc a.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  /* ---------- Sections ---------- */
+  section {
+    padding: 28px 0 60px;
+    scroll-margin-top: 24px;
+  }
+  section + section { border-top: 1px solid var(--line-soft); }
+  section h2 {
+    font-size: clamp(22px, 2.4vw, 30px);
+    letter-spacing: -0.01em;
+    margin: 8px 0 14px;
+    font-weight: 700;
+  }
+  section h2 .num {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    padding: 4px 8px;
+    border-radius: 6px;
+    vertical-align: middle;
+    margin-right: 14px;
+    transform: translateY(-3px);
+  }
+  section h3 {
+    font-size: 17px;
+    margin: 30px 0 10px;
+    color: var(--ink);
+  }
+  section p { color: var(--ink-dim); margin: 12px 0; }
+  section ul, section ol { color: var(--ink-dim); padding-left: 22px; }
+  section li { margin: 6px 0; }
+  section li > code,
+  section p > code,
+  section td > code { background: var(--bg-elev); }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.9em;
+    color: var(--accent);
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  /* ---------- Cards ---------- */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin: 18px 0;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin: 18px 0;
+  }
+  @media (max-width: 720px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .card .label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 6px;
+  }
+  .card .value {
+    font-size: 18px;
+    color: var(--ink);
+    line-height: 1.35;
+  }
+  .card .desc {
+    font-size: 13.5px;
+    color: var(--ink-dim);
+    margin-top: 8px;
+  }
+
+  /* ---------- Code blocks ---------- */
+  pre {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    margin: 14px 0;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ink);
+  }
+  pre code {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+  }
+  .codehead {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    border-radius: 10px 10px 0 0;
+    padding: 8px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-mute);
+  }
+  .codehead .lang {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .codehead + pre {
+    border-radius: 0 0 10px 10px;
+    margin-top: 0;
+  }
+
+  /* Token colors */
+  .tk-c   { color: #6b7280; font-style: italic; }   /* comment */
+  .tk-k   { color: #ff7b72; }                       /* keyword */
+  .tk-s   { color: #a5d6ff; }                       /* string  */
+  .tk-n   { color: #f0b86b; }                       /* number  */
+  .tk-fn  { color: #d2a8ff; }                       /* function name / class */
+  .tk-id  { color: #79c0ff; }                       /* identifier */
+  .tk-op  { color: #c9d1d9; }                       /* operator */
+  .tk-cls { color: #ffa657; }                       /* class */
+  .tk-key { color: #ffa657; }                       /* yaml key */
+
+  /* ---------- Tables ---------- */
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13.5px;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .tbl th, .tbl td {
+    text-align: left;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .tbl th {
+    background: var(--bg-elev-2);
+    font-weight: 600;
+    color: var(--ink);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .tbl tr:last-child td { border-bottom: 0; }
+  .tbl td code { font-size: 12.5px; }
+
+  /* ---------- Pipeline diagram ---------- */
+  .pipeline {
+    background:
+      radial-gradient(1200px 240px at 50% 0%, rgba(118,185,0,0.10), transparent 70%),
+      var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px;
+    margin: 18px 0 26px;
+  }
+  .pipeline svg { width: 100%; height: auto; display: block; }
+  .pipeline-legend {
+    display: flex; flex-wrap: wrap; gap: 14px;
+    padding: 14px 4px 0;
+    font-size: 12px;
+    color: var(--ink-dim);
+  }
+  .pipeline-legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .pipeline-legend .swatch {
+    width: 12px; height: 12px; border-radius: 3px;
+  }
+
+  /* ---------- FSM diagram ---------- */
+  .fsm-wrap {
+    background:
+      radial-gradient(800px 200px at 50% 100%, rgba(118,185,0,0.10), transparent 70%),
+      var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px;
+    margin: 18px 0;
+  }
+  .fsm-wrap svg { width: 100%; height: auto; display: block; }
+  .fsm-legend {
+    display: flex; flex-wrap: wrap; gap: 14px; padding: 12px 4px 0;
+    font-size: 12px; color: var(--ink-dim);
+  }
+  .fsm-legend .key {
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .fsm-legend .swatch {
+    width: 12px; height: 12px; border-radius: 3px;
+  }
+
+  /* ---------- Callouts ---------- */
+  .callout {
+    border-left: 3px solid var(--blue);
+    background: var(--blue-soft);
+    border-radius: 0 10px 10px 0;
+    padding: 12px 16px;
+    margin: 16px 0;
+    color: var(--ink);
+    font-size: 14px;
+  }
+  .callout.warn  { border-left-color: var(--amber); background: var(--amber-soft); }
+  .callout.danger{ border-left-color: var(--red);   background: var(--red-soft); }
+  .callout.good  { border-left-color: var(--accent);background: var(--accent-soft); }
+  .callout strong { color: var(--ink); }
+
+  /* ---------- Timeline ---------- */
+  .timeline {
+    position: relative;
+    margin: 24px 0;
+    padding-left: 28px;
+    border-left: 2px solid var(--line);
+  }
+  .timeline-step { position: relative; padding-bottom: 22px; }
+  .timeline-step::before {
+    content: ""; position: absolute; left: -35px; top: 4px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 0 4px rgba(118,185,0,0.18);
+  }
+  .timeline-step h4 {
+    margin: 0 0 4px;
+    font-size: 14.5px;
+    color: var(--ink);
+  }
+  .timeline-step p {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--ink-dim);
+  }
+  .timeline-step .ts {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* ---------- Footer ---------- */
+  footer {
+    border-top: 1px solid var(--line);
+    margin-top: 60px;
+    padding: 32px 32px 56px;
+    color: var(--ink-mute);
+    font-size: 13px;
+    max-width: 1280px;
+    margin-left: auto; margin-right: auto;
+  }
+  footer code { background: var(--bg-elev); }
+</style>
+</head>
+<body>
+
+<!-- ============================== HERO ============================== -->
+<header class="hero">
+  <span class="eyebrow"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent)"></span> qr_nav · ROSbot 3 PRO · Project A</span>
+  <h1>From <span class="accent">paper QR card</span> to <span class="accent">moving robot</span></h1>
+  <p class="lede">
+    A walkthrough of the <code>qr_nav</code> ROS&nbsp;2 pipeline running on a Husarion ROSbot&nbsp;3
+    PRO. We trace one printed QR card through the OAK-D camera, the OpenCV
+    detector, the finite-state interpreter, and out to the motor controller —
+    the same path every command takes, every time.
+  </p>
+  <div class="meta">
+    <span class="chip"><span class="dot"></span>ROS&nbsp;2 Jazzy</span>
+    <span class="chip"><span class="dot"></span>Python 3.10+</span>
+    <span class="chip"><span class="dot"></span>OpenCV 4.6</span>
+    <span class="chip"><span class="dot"></span>OAK-D Pro RGB</span>
+    <span class="chip"><span class="dot"></span>3 nodes · 4 topics</span>
+  </div>
+</header>
+
+<!-- ============================== LAYOUT ============================== -->
+<div class="layout">
+
+  <!-- ============================ TOC ============================ -->
+  <nav class="toc">
+    <p class="toc-title">On this page</p>
+    <ol>
+      <li><a href="#overview">System overview</a></li>
+      <li><a href="#cards">Step 0 — Generating QR cards</a></li>
+      <li><a href="#capture">Step 1 — Camera capture</a></li>
+      <li><a href="#detector">Step 2 — Detection &amp; decode</a></li>
+      <li><a href="#validate">Step 3 — Validate, debounce, publish</a></li>
+      <li><a href="#fsm">Step 4 — FSM interpreter</a></li>
+      <li><a href="#motor">Step 5 — Motor command</a></li>
+      <li><a href="#logger">Step 6 — Data logger</a></li>
+      <li><a href="#launch">Launch &amp; configuration</a></li>
+      <li><a href="#trace">End-to-end trace</a></li>
+      <li><a href="#hardening">Why these specific choices</a></li>
+    </ol>
+  </nav>
+
+  <!-- ============================ MAIN ============================ -->
+  <main>
+
+  <!-- ============== 1. OVERVIEW ============== -->
+  <section id="overview">
+    <h2><span class="num">01</span>System overview</h2>
+    <p>
+      <code>qr_nav</code> is a perception-to-action loop split across three ROS&nbsp;2
+      nodes. Each node has one job, and they communicate exclusively over named
+      topics — no node calls another directly. This is what lets us boot the
+      detector by itself for testing, swap in a fake <code>/cmd_vel</code>
+      destination during dry-runs, or replay a logged session.
+    </p>
+
+    <div class="pipeline">
+      <svg viewBox="0 0 1100 440" xmlns="http://www.w3.org/2000/svg"
+           role="img" aria-label="qr_nav system architecture">
+        <defs>
+          <marker id="pipeArr" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#aab2bf"/>
+          </marker>
+          <marker id="pipeArrTap" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#ff6b6b"/>
+          </marker>
+          <style>
+            .pn       { fill: #1a1e25; stroke-width: 2; }
+            .pn-hw    { stroke: #4ea3ff; }
+            .pn-det   { stroke: #76b900; }
+            .pn-fsm   { stroke: #b48cff; }
+            .pn-act   { stroke: #ffb84d; }
+            .pn-log   { stroke: #ff6b6b; }
+            .role     { fill: #aab2bf; font-family: ui-monospace, monospace;
+                        font-size: 10px; letter-spacing: 0.14em;
+                        text-transform: uppercase; }
+            .role-hw  { fill: #4ea3ff; }
+            .role-det { fill: #76b900; }
+            .role-fsm { fill: #b48cff; }
+            .role-act { fill: #ffb84d; }
+            .role-log { fill: #ff6b6b; }
+            .ttl      { fill: #e8ecf2; font-family: -apple-system, Inter, sans-serif;
+                        font-size: 14px; font-weight: 600; }
+            .top      { fill: #76b900; font-family: ui-monospace, monospace;
+                        font-size: 11.5px; }
+            .edge     { stroke: #aab2bf; stroke-width: 1.6; fill: none; }
+            .tap      { stroke: #ff6b6b; stroke-width: 1.4; fill: none;
+                        stroke-dasharray: 4 4; }
+            .tlbl     { fill: #aab2bf; font-family: ui-monospace, monospace;
+                        font-size: 10.5px; text-anchor: middle; }
+          </style>
+        </defs>
+
+        <!-- ============== TOP ROW : 4 NODES ============== -->
+
+        <!-- 1 · OAK-D camera (hardware) -->
+        <g>
+          <rect class="pn pn-hw" x="20"  y="60" rx="12" ry="12" width="200" height="110"/>
+          <text class="role role-hw" x="38"  y="85">HARDWARE</text>
+          <text class="ttl"          x="38"  y="115">OAK-D Pro RGB</text>
+          <text class="ttl"          x="38"  y="134">camera</text>
+          <text class="top"          x="38"  y="158">/oak/rgb/image_raw</text>
+        </g>
+
+        <!-- 2 · qr_detector -->
+        <g>
+          <rect class="pn pn-det" x="280" y="60" rx="12" ry="12" width="220" height="110"/>
+          <text class="role role-det" x="298" y="85">NODE 1 · PERCEPTION</text>
+          <text class="ttl"           x="298" y="115">qr_detector</text>
+          <text class="top"           x="298" y="142">→ /qr_command</text>
+          <text class="top"           x="298" y="159">→ /qr_detections</text>
+        </g>
+
+        <!-- 3 · command_interpreter -->
+        <g>
+          <rect class="pn pn-fsm" x="560" y="60" rx="12" ry="12" width="260" height="110"/>
+          <text class="role role-fsm" x="578" y="85">NODE 2 · POLICY (FSM)</text>
+          <text class="ttl"           x="578" y="115">command_interpreter</text>
+          <text class="top"           x="578" y="142">→ /cmd_vel</text>
+          <text class="top"           x="578" y="159">→ /nav_state</text>
+        </g>
+
+        <!-- 4 · ROSbot motor controller -->
+        <g>
+          <rect class="pn pn-act" x="880" y="60" rx="12" ry="12" width="200" height="110"/>
+          <text class="role role-act" x="898" y="85">HARDWARE</text>
+          <text class="ttl"           x="898" y="115">ROSbot motor</text>
+          <text class="ttl"           x="898" y="134">controller</text>
+          <text class="top"           x="898" y="158">← /cmd_vel</text>
+        </g>
+
+        <!-- ============== ARROWS BETWEEN TOP-ROW NODES ============== -->
+        <path class="edge" d="M220,115 L280,115" marker-end="url(#pipeArr)"/>
+        <path class="edge" d="M500,115 L560,115" marker-end="url(#pipeArr)"/>
+        <path class="edge" d="M820,115 L880,115" marker-end="url(#pipeArr)"/>
+
+        <!-- ============== BOTTOM : qr_logger ============== -->
+        <g>
+          <rect class="pn pn-log" x="370" y="320" rx="12" ry="12" width="360" height="100"/>
+          <text class="role role-log" x="388" y="345">NODE 3 · OBSERVABILITY</text>
+          <text class="ttl"           x="388" y="375">qr_logger</text>
+          <text class="top"           x="388" y="402" style="fill:#ff6b6b">
+            → /tmp/qr_nav_logs/*.csv (5 Hz)
+          </text>
+        </g>
+
+        <!-- ============== TAPS : dashed lines from each topic into logger ============== -->
+
+        <!-- /qr_command + /qr_detections (from qr_detector) -->
+        <path class="tap"
+              d="M390,170 L390,260 L450,260 L450,320"
+              marker-end="url(#pipeArrTap)"/>
+        <text class="tlbl" x="316" y="222">/qr_command</text>
+        <text class="tlbl" x="316" y="237">/qr_detections</text>
+
+        <!-- /nav_state + /cmd_vel (from command_interpreter) -->
+        <path class="tap"
+              d="M690,170 L690,260 L630,260 L630,320"
+              marker-end="url(#pipeArrTap)"/>
+        <text class="tlbl" x="765" y="222">/nav_state</text>
+        <text class="tlbl" x="765" y="237">/cmd_vel</text>
+      </svg>
+
+      <div class="pipeline-legend">
+        <span class="key"><span class="swatch" style="background:#4ea3ff"></span>hardware</span>
+        <span class="key"><span class="swatch" style="background:#76b900"></span>perception</span>
+        <span class="key"><span class="swatch" style="background:#b48cff"></span>policy / FSM</span>
+        <span class="key"><span class="swatch" style="background:#ffb84d"></span>actuation</span>
+        <span class="key"><span class="swatch" style="background:#ff6b6b"></span>observability (passive tap)</span>
+      </div>
+    </div>
+
+    <table class="tbl">
+      <thead><tr>
+        <th>Topic</th><th>Type</th><th>Publisher → Subscribers</th><th>Carries</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><code>/oak/rgb/image_raw</code></td>
+          <td><code>sensor_msgs/Image</code></td>
+          <td>OAK driver → <code>qr_detector</code></td>
+          <td>Raw 1080p RGB frames at ~10&nbsp;Hz (Pi&nbsp;5 CPU-bound).</td>
+        </tr>
+        <tr>
+          <td><code>/qr_command</code></td>
+          <td><code>std_msgs/String</code></td>
+          <td><code>qr_detector</code> → <code>command_interpreter</code>, <code>qr_logger</code></td>
+          <td>One of 7 validated command strings, debounced 1.0&nbsp;s.</td>
+        </tr>
+        <tr>
+          <td><code>/qr_detections</code></td>
+          <td><code>std_msgs/String</code> (JSON)</td>
+          <td><code>qr_detector</code> → <code>qr_logger</code></td>
+          <td>Every decode this tick, valid or not, with bbox area.</td>
+        </tr>
+        <tr>
+          <td><code>/cmd_vel</code></td>
+          <td><code>geometry_msgs/TwistStamped</code></td>
+          <td><code>command_interpreter</code> → motor controller, <code>qr_logger</code></td>
+          <td>Linear&nbsp;x and angular&nbsp;z, published at 20&nbsp;Hz.</td>
+        </tr>
+        <tr>
+          <td><code>/nav_state</code></td>
+          <td><code>std_msgs/String</code></td>
+          <td><code>command_interpreter</code> → <code>qr_logger</code></td>
+          <td>Current FSM state name.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============== 0. CARDS ============== -->
+  <section id="cards">
+    <h2><span class="num">02</span>Step 0 — Generating QR cards (offline, on the laptop)</h2>
+    <p>
+      Before the robot ever sees a card, the cards have to exist. They're
+      generated by <code>src/utils/generate_qr_cards.py</code>, which
+      <strong>parses the detector source itself</strong> with Python's
+      <code>ast</code> module to extract the <code>VALID_COMMANDS</code> set. The
+      printed cards are therefore guaranteed to match the strings the detector
+      actually accepts — no chance of "the card said TURNLEFT but the code
+      checks TURN_LEFT".
+    </p>
+
+    <div class="codehead"><span class="lang">python</span> &nbsp;src/utils/generate_qr_cards.py</div>
+<pre><code><span class="tk-k">def</span> <span class="tk-fn">load_valid_commands</span>(source_path: Path) -&gt; list[str]:
+    <span class="tk-s">"""Extract the VALID_COMMANDS set literal from the detector source."""</span>
+    tree = ast.parse(source_path.read_text())
+    <span class="tk-k">for</span> node <span class="tk-k">in</span> tree.body:
+        <span class="tk-k">if</span> <span class="tk-k">not</span> isinstance(node, ast.Assign): <span class="tk-k">continue</span>
+        targets = [t.id <span class="tk-k">for</span> t <span class="tk-k">in</span> node.targets <span class="tk-k">if</span> isinstance(t, ast.Name)]
+        <span class="tk-k">if</span> <span class="tk-s">"VALID_COMMANDS"</span> <span class="tk-k">not in</span> targets: <span class="tk-k">continue</span>
+        <span class="tk-c"># node.value is an ast.Set whose elts are ast.Constant strings</span>
+        <span class="tk-k">return</span> sorted(elt.value <span class="tk-k">for</span> elt <span class="tk-k">in</span> node.value.elts)
+</code></pre>
+
+    <p>
+      For each command it renders an A4 page at 150&nbsp;DPI containing a
+      ~12&nbsp;cm QR with <strong>error-correction level&nbsp;H</strong>
+      (~30% damage tolerance) and a large human-readable label, then concatenates
+      them into <code>qr_cards/all_commands.pdf</code>. The print instruction is
+      explicit: <em>100% scale, no "fit to page"</em>, so the QR's apparent size
+      at a given distance is predictable — which matters because the detector
+      uses bounding-box area both as a quality filter and as a tiebreak between
+      simultaneously-visible cards.
+    </p>
+
+    <div class="grid-3">
+      <div class="card">
+        <div class="label">Cards produced</div>
+        <div class="value">7 PNGs + 1 PDF</div>
+        <div class="desc">One per command in <code>VALID_COMMANDS</code>.</div>
+      </div>
+      <div class="card">
+        <div class="label">QR error correction</div>
+        <div class="value">Level H · ~30%</div>
+        <div class="desc">Survives folding, glare, partial occlusion.</div>
+      </div>
+      <div class="card">
+        <div class="label">Physical size at 100% scale</div>
+        <div class="value">~12 cm × 12 cm</div>
+        <div class="desc">Decodable reliably from 0.3 – 1.0 m.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============== 1. CAPTURE ============== -->
+  <section id="capture">
+    <h2><span class="num">03</span>Step 1 — Camera capture</h2>
+    <p>
+      The Husarion bring-up brings up the OAK-D Pro under the
+      <code>/oak/...</code> namespace (not the depthai-ros default
+      <code>/camera/camera/...</code>), publishing the colour image as
+      <code>sensor_msgs/Image</code> at roughly 10&nbsp;Hz on a Pi&nbsp;5. Two
+      details matter for the subscriber:
+    </p>
+    <ul>
+      <li>The <strong>topic name</strong> must literally be
+        <code>/oak/rgb/image_raw</code>. We discovered this with
+        <code>ros2 topic list | grep oak</code> on the actual robot — the
+        depthai-ros documentation defaults are not what Husarion ships.</li>
+      <li>The <strong>QoS reliability</strong> must match the publisher.
+        Husarion's OAK-D publishes <code>RELIABLE / VOLATILE</code>; a
+        <code>BEST_EFFORT</code> subscriber against a <code>RELIABLE</code>
+        publisher silently receives <em>zero</em> callbacks. ROS&nbsp;2 rejects
+        the QoS contract without raising an error.</li>
+    </ul>
+
+    <div class="callout warn">
+      <strong>Failure mode:</strong> If the QoS is wrong, the detector node
+      starts cleanly, <code>/qr_command</code> never fires, and there are no
+      logs to tell you why. The startup banner therefore prints the resolved
+      QoS string so it's verifiable at a glance.
+    </div>
+
+    <div class="codehead"><span class="lang">python</span> &nbsp;qr_detector_node.py · QoS wiring</div>
+<pre><code><span class="tk-k">if</span> qos_reliability_str == <span class="tk-s">'best_effort'</span>:
+    reliability = ReliabilityPolicy.BEST_EFFORT
+<span class="tk-k">elif</span> qos_reliability_str == <span class="tk-s">'reliable'</span>:
+    reliability = ReliabilityPolicy.RELIABLE
+<span class="tk-k">else</span>:
+    self.get_logger().warn(...)
+    reliability = ReliabilityPolicy.RELIABLE
+
+camera_qos = QoSProfile(
+    depth=<span class="tk-n">10</span>,
+    reliability=reliability,
+    durability=DurabilityPolicy.VOLATILE,
+)
+
+self.image_sub = self.create_subscription(
+    Image, rgb_topic, self.image_callback, camera_qos,
+)
+</code></pre>
+  </section>
+
+  <!-- ============== 2. DETECTOR ============== -->
+  <section id="detector">
+    <h2><span class="num">04</span>Step 2 — Detection &amp; decode</h2>
+    <p>
+      Every incoming frame triggers <code>image_callback</code>. Two cheap guards
+      come first to keep the Pi&nbsp;5 from being saturated:
+    </p>
+    <ol>
+      <li><strong>Rate limit:</strong> we only process at most
+        <code>detection_rate_hz</code> (15 Hz cap) — frames arriving faster
+        than that are dropped silently. The camera itself runs at ~10 Hz, so
+        in practice we process every frame, but the cap protects us if the
+        driver bursts.</li>
+      <li><strong>Conversion:</strong> <code>cv_bridge</code> turns the
+        ROS&nbsp;<code>Image</code> into an OpenCV BGR <code>ndarray</code>.</li>
+    </ol>
+
+    <h3>2a. Two-stage decode pipeline</h3>
+    <p>
+      OpenCV's <code>cv2.QRCodeDetector</code> is fast but brittle on
+      uneven lighting. The detector therefore runs two passes:
+    </p>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="label">Pass 1 — Standard</div>
+        <div class="value">Grayscale + CLAHE</div>
+        <div class="desc">
+          Contrast-Limited Adaptive Histogram Equalisation
+          (<code>clipLimit=2.0</code>, 8×8 tiles) flattens harsh shadows and
+          lifts mid-tones — the single biggest win for cards held at oblique
+          angles.
+        </div>
+      </div>
+      <div class="card">
+        <div class="label">Pass 2 — Fallback (only if pass 1 finds nothing)</div>
+        <div class="value">Adaptive threshold</div>
+        <div class="desc">
+          <code>cv2.adaptiveThreshold(..., GAUSSIAN_C, blockSize=11, C=2)</code>
+          binarises the CLAHE output. Recovers crumpled, faded, or
+          partially-blown-out codes that pass 1 misses.
+        </div>
+      </div>
+    </div>
+
+    <div class="codehead"><span class="lang">python</span> &nbsp;qr_detector_node.py · two-stage decode</div>
+<pre><code>gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+clahe = cv2.createCLAHE(clipLimit=<span class="tk-n">2.0</span>, tileGridSize=(<span class="tk-n">8</span>, <span class="tk-n">8</span>))
+enhanced = clahe.apply(gray)
+
+detections = self._detect_qr_codes(enhanced)
+
+<span class="tk-k">if not</span> detections:
+    thresh = cv2.adaptiveThreshold(
+        enhanced, <span class="tk-n">255</span>,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
+        blockSize=<span class="tk-n">11</span>, C=<span class="tk-n">2</span>,
+    )
+    detections = self._detect_qr_codes(thresh)
+</code></pre>
+
+    <h3>2b. <code>_detect_qr_codes</code> — multi-QR aware</h3>
+    <p>
+      We use <code>detectAndDecodeMulti</code> rather than the single-target
+      <code>detectAndDecode</code>, because we want to handle the case where
+      two cards are in frame at once. For each decoded string we compute the
+      bounding-box area from the four corner points returned by OpenCV.
+    </p>
+    <div class="callout warn">
+      <strong>OpenCV 4.6 quirk:</strong> <code>cv2.contourArea</code> on the
+      Jazzy default OpenCV requires the points to be <code>CV_32F</code> or
+      <code>CV_32S</code>. <code>np.float64</code> (the default for
+      <code>.astype(float)</code>) raises
+      <code>(-215:Assertion failed) depth == CV_32F || CV_32S</code>. The cast
+      to <code>np.float32</code> is wrapped in <code>try/except</code> so a
+      single malformed detection becomes a warning, not a crash that strands
+      the robot mid-run.
+    </div>
+
+    <div class="codehead"><span class="lang">python</span> &nbsp;qr_detector_node.py · _detect_qr_codes</div>
+<pre><code>retval, decoded_info, points, _ = self.qr_detector.detectAndDecodeMulti(image)
+<span class="tk-k">if not</span> retval <span class="tk-k">or</span> decoded_info <span class="tk-k">is None or</span> points <span class="tk-k">is None</span>:
+    <span class="tk-k">return</span> []
+
+detections = []
+<span class="tk-k">for</span> i, content <span class="tk-k">in</span> enumerate(decoded_info):
+    <span class="tk-k">if not</span> content: <span class="tk-k">continue</span>
+    <span class="tk-k">try</span>:
+        bbox_points = np.asarray(points[i], dtype=np.float32)
+        bbox_area   = cv2.contourArea(bbox_points)
+    <span class="tk-k">except</span> Exception <span class="tk-k">as</span> e:
+        self.get_logger().warn(<span class="tk-s">f"Skipping detection ..."</span>)
+        <span class="tk-k">continue</span>
+    detections.append((content.strip(), bbox_area))
+<span class="tk-k">return</span> detections
+</code></pre>
+  </section>
+
+  <!-- ============== 3. VALIDATE ============== -->
+  <section id="validate">
+    <h2><span class="num">05</span>Step 3 — Validate, debounce, publish</h2>
+    <p>
+      A successful decode is necessary but not sufficient. Three filters run
+      before anything is sent to the FSM:
+    </p>
+    <table class="tbl">
+      <thead><tr>
+        <th>Filter</th><th>What it rejects</th><th>Why</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Allow-list</strong> against <code>VALID_COMMANDS</code></td>
+          <td>Any string that isn't one of the 7 known commands.</td>
+          <td>QR codes in the wild (posters, packaging) decode happily but mean nothing to us.</td>
+        </tr>
+        <tr>
+          <td><strong>Min bbox area</strong> (<code>min_bbox_area=500&nbsp;px</code>)</td>
+          <td>Cards too far away or too oblique to decode reliably.</td>
+          <td>Below this size the decode is a coin-flip; we'd rather miss it than misfire.</td>
+        </tr>
+        <tr>
+          <td><strong>Largest-bbox tiebreak</strong></td>
+          <td>All-but-one of multiple simultaneously-valid detections.</td>
+          <td>Spatial proxy for "what is the operator pointing at?" — closer card wins.</td>
+        </tr>
+        <tr>
+          <td><strong>Per-command cooldown</strong> (1.0&nbsp;s)</td>
+          <td>The same command repeating within 1&nbsp;s.</td>
+          <td>At 15&nbsp;Hz we'd otherwise re-fire the same command 15× per second, slamming the FSM.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      All raw decodes (valid or not) are still published on
+      <code>/qr_detections</code> for the logger, so we can post-mortem
+      "why didn't card&nbsp;X fire?" later. Only the survivor of the four
+      filters lands on <code>/qr_command</code>.
+    </p>
+
+    <div class="codehead"><span class="lang">python</span> &nbsp;qr_detector_node.py · final filters</div>
+<pre><code><span class="tk-k">for</span> content, bbox_area <span class="tk-k">in</span> detections:
+    all_detections.append({<span class="tk-s">'timestamp'</span>: ts, <span class="tk-s">'content'</span>: content, <span class="tk-s">'bbox_area'</span>: bbox_area})
+    <span class="tk-k">if</span> content <span class="tk-k">in</span> VALID_COMMANDS <span class="tk-k">and</span> bbox_area &gt;= self.min_bbox_area:
+        valid_detections.append((content, bbox_area))
+
+self.detections_pub.publish(String(data=json.dumps(all_detections)))
+
+<span class="tk-k">if not</span> valid_detections: <span class="tk-k">return</span>
+
+best_command, best_area = max(valid_detections, key=<span class="tk-k">lambda</span> x: x[<span class="tk-n">1</span>])
+
+last_time = self.last_command_time.get(best_command, <span class="tk-n">0.0</span>)
+<span class="tk-k">if</span> now - last_time &lt; self.cooldown_sec: <span class="tk-k">return</span>
+
+self.command_pub.publish(String(data=best_command))
+self.last_command_time[best_command] = now
+</code></pre>
+  </section>
+
+  <!-- ============== 4. FSM ============== -->
+  <section id="fsm">
+    <h2><span class="num">06</span>Step 4 — FSM interpreter</h2>
+    <p>
+      <code>command_interpreter_node</code> turns command strings into motion.
+      It runs two things in parallel: a callback on <code>/qr_command</code>
+      that <em>changes state</em>, and a 20&nbsp;Hz timer
+      (<code>control_loop</code>) that <em>publishes velocity</em> based on
+      whatever state we're currently in. Decoupling these is what lets a
+      <code>TURNING</code> state run for a fixed wall-clock duration without
+      blocking command reception.
+    </p>
+
+    <h3>The five states</h3>
+    <table class="tbl">
+      <thead><tr>
+        <th>State</th><th>Velocity output</th><th>Accepts</th><th>Exit condition</th>
+      </tr></thead>
+      <tbody>
+        <tr><td><code>IDLE</code></td>
+          <td><code>0.0, 0.0</code></td>
+          <td>Any valid command</td>
+          <td>First command received (no auto-exit — boot-safe)</td></tr>
+        <tr><td><code>DRIVING</code></td>
+          <td><code>cruise_speed, 0.0</code></td>
+          <td>Any valid command</td>
+          <td>Command, or <code>recovery_timeout</code> elapsed</td></tr>
+        <tr><td><code>TURNING</code></td>
+          <td><code>0.0, ±turn_speed</code></td>
+          <td><em>Nothing — commands ignored</em></td>
+          <td><code>turn_duration</code> elapsed → <code>DRIVING</code></td></tr>
+        <tr><td><code>STOPPED</code></td>
+          <td><code>0.0, 0.0</code></td>
+          <td><em>Only <code>GO</code></em></td>
+          <td><code>GO</code> command → <code>DRIVING</code></td></tr>
+        <tr><td><code>RECOVERING</code></td>
+          <td><code>min_speed, 0.0</code> (creep)</td>
+          <td>Any valid command</td>
+          <td>Any command</td></tr>
+      </tbody>
+    </table>
+
+    <h3>State transition diagram</h3>
+    <div class="fsm-wrap">
+      <svg viewBox="0 0 900 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="qr_nav FSM diagram">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#aab2bf"/>
+          </marker>
+          <marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#76b900"/>
+          </marker>
+          <marker id="arrR" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#ff6b6b"/>
+          </marker>
+          <style>
+            .node      { fill: #1a1e25; stroke-width: 2; }
+            .node-idle { stroke: #4ea3ff; }
+            .node-drv  { stroke: #76b900; }
+            .node-trn  { stroke: #b48cff; }
+            .node-stp  { stroke: #ffb84d; }
+            .node-rec  { stroke: #ff6b6b; }
+            .lbl       { fill: #e8ecf2; font-family: -apple-system, Inter, sans-serif;
+                         font-size: 13px; font-weight: 600; text-anchor: middle; }
+            .sub       { fill: #aab2bf; font-family: ui-monospace, monospace;
+                         font-size: 10.5px; text-anchor: middle; }
+            .edge      { stroke: #aab2bf; stroke-width: 1.4; fill: none; }
+            .edge-good { stroke: #76b900; stroke-width: 1.6; fill: none; }
+            .edge-rec  { stroke: #ff6b6b; stroke-width: 1.6; fill: none;
+                         stroke-dasharray: 5 4; }
+            .edge-lbl  { fill: #aab2bf; font-family: ui-monospace, monospace;
+                         font-size: 10.5px; text-anchor: middle; }
+            .edge-lbl-good { fill: #76b900; }
+            .edge-lbl-rec  { fill: #ff6b6b; }
+          </style>
+        </defs>
+
+        <!-- IDLE -->
+        <g>
+          <rect class="node node-idle" x="40"  y="190" rx="14" ry="14" width="150" height="70"/>
+          <text class="lbl" x="115" y="222">IDLE</text>
+          <text class="sub" x="115" y="242">v = 0, ω = 0</text>
+        </g>
+
+        <!-- DRIVING -->
+        <g>
+          <rect class="node node-drv" x="375" y="190" rx="14" ry="14" width="150" height="70"/>
+          <text class="lbl" x="450" y="222">DRIVING</text>
+          <text class="sub" x="450" y="242">v = cruise, ω = 0</text>
+        </g>
+
+        <!-- TURNING -->
+        <g>
+          <rect class="node node-trn" x="710" y="50" rx="14" ry="14" width="150" height="70"/>
+          <text class="lbl" x="785" y="82">TURNING</text>
+          <text class="sub" x="785" y="102">v = 0, ω = ±turn</text>
+        </g>
+
+        <!-- STOPPED -->
+        <g>
+          <rect class="node node-stp" x="710" y="190" rx="14" ry="14" width="150" height="70"/>
+          <text class="lbl" x="785" y="222">STOPPED</text>
+          <text class="sub" x="785" y="242">v = 0, ω = 0</text>
+        </g>
+
+        <!-- RECOVERING -->
+        <g>
+          <rect class="node node-rec" x="375" y="350" rx="14" ry="14" width="150" height="70"/>
+          <text class="lbl" x="450" y="382">RECOVERING</text>
+          <text class="sub" x="450" y="402">v = min_speed, ω = 0</text>
+        </g>
+
+        <!-- IDLE -> DRIVING -->
+        <path class="edge-good" d="M190,225 L375,225" marker-end="url(#arrA)"/>
+        <text class="edge-lbl edge-lbl-good" x="282" y="217">first command (e.g. GO)</text>
+
+        <!-- DRIVING <-> TURNING -->
+        <path class="edge" d="M510,200 C600,150 660,110 715,95" marker-end="url(#arr)"/>
+        <text class="edge-lbl" x="608" y="142">TURN_LEFT/RIGHT/U_TURN</text>
+        <path class="edge" d="M735,120 C685,170 600,200 525,215" marker-end="url(#arr)"/>
+        <text class="edge-lbl" x="608" y="180">turn_duration elapsed</text>
+
+        <!-- IDLE -> TURNING (less common but legal) -->
+        <path class="edge" d="M180,205 C400,40 550,40 720,70" marker-end="url(#arr)"/>
+        <text class="edge-lbl" x="450" y="40">IDLE → turn → ends in DRIVING</text>
+
+        <!-- DRIVING <-> STOPPED -->
+        <path class="edge" d="M525,215 L710,215" marker-end="url(#arr)"/>
+        <text class="edge-lbl" x="617" y="207">STOP</text>
+        <path class="edge-good" d="M710,238 L525,238" marker-end="url(#arrA)"/>
+        <text class="edge-lbl edge-lbl-good" x="617" y="258">GO (only)</text>
+
+        <!-- DRIVING -> RECOVERING -->
+        <path class="edge-rec" d="M450,260 L450,350" marker-end="url(#arrR)"/>
+        <text class="edge-lbl edge-lbl-rec" x="540" y="307">recovery_timeout</text>
+
+        <!-- RECOVERING -> DRIVING -->
+        <path class="edge-good" d="M420,350 C380,310 380,290 420,260" marker-end="url(#arrA)"/>
+        <text class="edge-lbl edge-lbl-good" x="338" y="307">any valid QR</text>
+
+        <!-- DRIVING self-loop (SPEED_UP/DOWN) -->
+        <path class="edge" d="M398,190 C380,150 410,140 442,160" marker-end="url(#arr)"/>
+        <text class="edge-lbl" x="448" y="138">SPEED_UP / SPEED_DOWN</text>
+      </svg>
+      <div class="fsm-legend">
+        <span class="key"><span class="swatch" style="background:#4ea3ff"></span>boot state</span>
+        <span class="key"><span class="swatch" style="background:#76b900"></span>active driving</span>
+        <span class="key"><span class="swatch" style="background:#b48cff"></span>blocking turn (commands ignored)</span>
+        <span class="key"><span class="swatch" style="background:#ffb84d"></span>operator halt (GO-only)</span>
+        <span class="key"><span class="swatch" style="background:#ff6b6b"></span>vision-loss safety creep</span>
+      </div>
+    </div>
+
+    <h3>Why <code>IDLE</code> exists</h3>
+    <p>
+      The FSM boots into <code>IDLE</code>, not <code>DRIVING</code>. This is
+      deliberate: launching the stack <em>never</em> moves the robot on its own.
+      A human shows the first card to deliberately arm the bot. Once armed,
+      <code>IDLE</code> is unreachable — the FSM only ever cycles between
+      <code>DRIVING</code>, <code>TURNING</code>, <code>STOPPED</code>, and
+      <code>RECOVERING</code>.
+    </p>
+
+    <h3>The control loop (20 Hz)</h3>
+    <p>
+      The state callback <em>changes</em> state. The 20 Hz control timer
+      <em>enacts</em> it. This separation is what lets <code>TURNING</code> work
+      with no extra threads: when the timer fires and the state is
+      <code>TURNING</code>, it checks elapsed time, and either keeps emitting
+      <code>(0, ±turn_speed)</code> or transitions back to <code>DRIVING</code>.
+    </p>
+
+    <div class="codehead"><span class="lang">python</span> &nbsp;command_interpreter_node.py · control_loop</div>
+<pre><code><span class="tk-k">def</span> <span class="tk-fn">control_loop</span>(self):
+    now = time.time()
+
+    <span class="tk-k">if</span> self.state == State.IDLE:
+        self._publish_velocity(<span class="tk-n">0.0</span>, <span class="tk-n">0.0</span>); <span class="tk-k">return</span>
+
+    <span class="tk-k">if</span> self.state == State.DRIVING:
+        self._publish_velocity(self.cruise_speed, <span class="tk-n">0.0</span>)
+        <span class="tk-k">if</span> now - self.last_command_time &gt;= self.recovery_timeout:
+            self._transition_to(State.RECOVERING)
+
+    <span class="tk-k">elif</span> self.state == State.TURNING:
+        elapsed = now - self.turn_start_time
+        <span class="tk-k">if</span> elapsed &gt;= self.turn_duration:
+            self._transition_to(State.DRIVING)
+            self._publish_velocity(self.cruise_speed, <span class="tk-n">0.0</span>)
+        <span class="tk-k">else</span>:
+            self._publish_velocity(<span class="tk-n">0.0</span>, self.turn_angular_z)
+
+    <span class="tk-k">elif</span> self.state == State.STOPPED:
+        self._publish_velocity(<span class="tk-n">0.0</span>, <span class="tk-n">0.0</span>)
+
+    <span class="tk-k">elif</span> self.state == State.RECOVERING:
+        self._publish_velocity(self.min_speed, <span class="tk-n">0.0</span>)
+</code></pre>
+
+    <h3>Turn duration is open-loop</h3>
+    <p>
+      We deliberately do not consume odometry or IMU here. <code>TURNING</code>
+      runs for a fixed <code>turn_90_duration</code> seconds at a fixed
+      <code>turn_speed</code> rad/s. The duration is derived from the geometry:
+    </p>
+    <pre><code>turn_90_duration  = π/2 / turn_speed   ≈ 1.5708 / 0.4 ≈ 3.93 s  → rounded to 4.0
+turn_180_duration = π   / turn_speed   ≈ 3.1416 / 0.4 ≈ 7.85 s  → rounded to 8.0</code></pre>
+    <p>
+      The trade-off is that turn accuracy drifts with battery sag and floor
+      friction. For this assignment that's acceptable — turns are calibrated
+      with wheels in the air (Stage&nbsp;3 of the deploy guide), and the
+      assignment rubric doesn't require closed-loop heading. Moving to closed
+      loop would be a roughly &lt;50-line change: subscribe to
+      <code>/odom</code>, integrate yaw, and exit <code>TURNING</code> when
+      <code>|Δyaw| ≥ target</code>.
+    </p>
+  </section>
+
+  <!-- ============== 5. MOTOR ============== -->
+  <section id="motor">
+    <h2><span class="num">07</span>Step 5 — Motor command</h2>
+    <p>
+      The interpreter publishes to <code>/cmd_vel</code> as
+      <code>geometry_msgs/TwistStamped</code> — <em>not</em> plain
+      <code>Twist</code>. ROS&nbsp;2 Jazzy's Husarion bring-up uses the
+      stamped variant, and a type mismatch produces no error: the topic just
+      silently fails to match and the base controller never sees our messages.
+      This is the single most common foot-gun on the platform.
+    </p>
+
+    <div class="codehead"><span class="lang">python</span> &nbsp;command_interpreter_node.py · _publish_velocity</div>
+<pre><code><span class="tk-k">def</span> <span class="tk-fn">_publish_velocity</span>(self, linear_x: float, angular_z: float):
+    msg = TwistStamped()
+    msg.header.stamp    = self.get_clock().now().to_msg()
+    msg.header.frame_id = self.cmd_vel_frame_id   <span class="tk-c"># 'base_link' (REP-105)</span>
+    msg.twist.linear.x  = linear_x
+    msg.twist.angular.z = angular_z
+    self.cmd_vel_pub.publish(msg)
+</code></pre>
+
+    <h3>Command-to-velocity table</h3>
+    <table class="tbl">
+      <thead><tr>
+        <th>Card</th><th>Resulting twist</th><th>Duration</th><th>Notes</th>
+      </tr></thead>
+      <tbody>
+        <tr><td><code>GO</code></td><td><code>(cruise, 0)</code></td><td>continuous</td><td>Arms from <code>IDLE</code>, releases from <code>STOPPED</code>.</td></tr>
+        <tr><td><code>STOP</code></td><td><code>(0, 0)</code></td><td>continuous</td><td>Only <code>GO</code> can release.</td></tr>
+        <tr><td><code>TURN_LEFT</code></td><td><code>(0, +turn_speed)</code></td><td>4.0 s</td><td>Then auto-resumes <code>DRIVING</code>.</td></tr>
+        <tr><td><code>TURN_RIGHT</code></td><td><code>(0, –turn_speed)</code></td><td>4.0 s</td><td>"</td></tr>
+        <tr><td><code>U_TURN</code></td><td><code>(0, +turn_speed)</code></td><td>8.0 s</td><td>Same direction as TURN_LEFT, twice as long.</td></tr>
+        <tr><td><code>SPEED_UP</code></td><td><code>(cruise+0.05, 0)</code></td><td>continuous</td><td>Capped at <code>max_speed=0.4</code>.</td></tr>
+        <tr><td><code>SPEED_DOWN</code></td><td><code>(cruise–0.05, 0)</code></td><td>continuous</td><td>Floored at <code>min_speed=0.05</code>.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout danger">
+      <strong>Shutdown safety:</strong> on <code>KeyboardInterrupt</code> the
+      node publishes one final empty <code>TwistStamped</code> before
+      destroying itself, so a Ctrl-C reliably stops the wheels rather than
+      leaving the last commanded velocity to coast.
+    </div>
+  </section>
+
+  <!-- ============== 6. LOGGER ============== -->
+  <section id="logger">
+    <h2><span class="num">08</span>Step 6 — Data logger</h2>
+    <p>
+      <code>data_logger_node</code> is a passive observer. It subscribes to
+      every interesting topic and writes a row to a CSV at 5 Hz, plus prints
+      a per-command and per-state-time summary on shutdown. Two things make it
+      useful for the report:
+    </p>
+    <ul>
+      <li>It records both <code>/qr_command</code> (what fired) and
+        <code>/qr_detections</code> (every raw decode this tick), so we can
+        compute <strong>detection accuracy</strong>
+        ("we saw the card but didn't fire") separately from
+        <strong>execution accuracy</strong> ("we fired but the wrong thing
+        happened").</li>
+      <li>It accumulates per-state wall time on every
+        <code>/nav_state</code> change, giving the
+        <em>"% of run spent in RECOVERING"</em> number that's the most honest
+        single measure of run health.</li>
+    </ul>
+
+    <div class="codehead"><span class="lang">csv</span> &nbsp;qr_log_*.csv columns</div>
+<pre><code>timestamp, elapsed_s, qr_command, all_detections,
+nav_state, cmd_linear_x, cmd_angular_z, detection_event</code></pre>
+
+    <div class="callout">
+      <strong>Operational note:</strong> logs land in <code>/tmp/qr_nav_logs/</code>,
+      which wipes on reboot. The deploy guide tells operators to
+      <code>scp</code> them off before powering down.
+    </div>
+  </section>
+
+  <!-- ============== 7. LAUNCH ============== -->
+  <section id="launch">
+    <h2><span class="num">09</span>Launch &amp; configuration</h2>
+    <p>
+      One launch file brings up all three nodes with a single shared YAML
+      config. All tunables — speeds, turn durations, QoS, log directory —
+      live in <code>config/qr_params.yaml</code>, so re-tuning never requires
+      a recompile.
+    </p>
+
+    <div class="codehead"><span class="lang">bash</span> &nbsp;Launch the full stack</div>
+<pre><code><span class="tk-c"># Motors live</span>
+ros2 launch qr_nav qr_nav.launch.py
+
+<span class="tk-c"># Motors diverted to a dummy topic — safe dry-run on the floor</span>
+ros2 launch qr_nav qr_nav.launch.py cmd_vel_topic:=/cmd_vel_dummy</code></pre>
+
+    <p>
+      The <code>cmd_vel_topic</code> launch argument matters: <code>ros2 launch</code>
+      doesn't accept arbitrary <code>--ros-args --remap</code> flags, so the
+      remap has to be wired through a declared launch argument that flows into
+      both the interpreter (publisher) and the logger (subscriber). This is the
+      mechanism behind <em>Stage 2</em> of the deploy guide — a full launch
+      where the wheels can't possibly turn.
+    </p>
+
+    <div class="codehead"><span class="lang">yaml</span> &nbsp;config/qr_params.yaml (key entries)</div>
+<pre><code><span class="tk-key">qr_detector</span>:
+  <span class="tk-key">ros__parameters</span>:
+    <span class="tk-key">rgb_image_topic</span>: <span class="tk-s">"/oak/rgb/image_raw"</span>
+    <span class="tk-key">detection_rate_hz</span>: <span class="tk-n">15.0</span>
+    <span class="tk-key">min_bbox_area</span>: <span class="tk-n">500</span>
+    <span class="tk-key">image_qos_reliability</span>: <span class="tk-s">"reliable"</span>
+
+<span class="tk-key">command_interpreter</span>:
+  <span class="tk-key">ros__parameters</span>:
+    <span class="tk-key">cruise_speed</span>:       <span class="tk-n">0.08</span>   <span class="tk-c"># m/s   (demo: 0.20)</span>
+    <span class="tk-key">turn_speed</span>:         <span class="tk-n">0.4</span>    <span class="tk-c"># rad/s (demo: 0.80)</span>
+    <span class="tk-key">turn_90_duration</span>:   <span class="tk-n">4.0</span>    <span class="tk-c"># s     (= π/2 / turn_speed, rounded up)</span>
+    <span class="tk-key">turn_180_duration</span>:  <span class="tk-n">8.0</span>    <span class="tk-c"># s     (= 2 × turn_90_duration)</span>
+    <span class="tk-key">control_rate_hz</span>:    <span class="tk-n">20.0</span>
+    <span class="tk-key">recovery_timeout</span>:   <span class="tk-n">3.0</span>    <span class="tk-c"># enter RECOVERING after no command (demo: 5.0)</span>
+
+<span class="tk-key">qr_logger</span>:
+  <span class="tk-key">ros__parameters</span>:
+    <span class="tk-key">log_directory</span>: <span class="tk-s">"/tmp/qr_nav_logs"</span>
+    <span class="tk-key">log_rate_hz</span>:   <span class="tk-n">5.0</span>
+</code></pre>
+  </section>
+
+  <!-- ============== 8. END-TO-END TRACE ============== -->
+  <section id="trace">
+    <h2><span class="num">10</span>End-to-end trace — one card, one motion</h2>
+    <p>
+      Putting it all together. Here's what happens, in order, from the moment
+      a <code>TURN_LEFT</code> card enters the camera frame to the moment the
+      wheels stop turning. Each step is real code, not pseudo-code.
+    </p>
+
+    <div class="timeline">
+      <div class="timeline-step">
+        <div class="ts">t = 0.000 s</div>
+        <h4>1 · OAK-D publishes a frame</h4>
+        <p>
+          A 1920×1080 BGR8 <code>sensor_msgs/Image</code> arrives on
+          <code>/oak/rgb/image_raw</code>. The detector's RELIABLE subscriber
+          accepts it.
+        </p>
+      </div>
+      <div class="timeline-step">
+        <div class="ts">t = 0.001 s</div>
+        <h4>2 · Rate gate</h4>
+        <p>
+          <code>image_callback</code> checks the rate limiter
+          (<code>15 Hz</code>); the previous frame was ≥66 ms ago, so we
+          proceed.
+        </p>
+      </div>
+      <div class="timeline-step">
+        <div class="ts">t = 0.002 s</div>
+        <h4>3 · Convert &amp; preprocess</h4>
+        <p>
+          <code>cv_bridge</code> hands us a BGR ndarray. We grayscale and
+          apply CLAHE — the QR is now high-contrast even though the room
+          lighting is uneven.
+        </p>
+      </div>
+      <div class="timeline-step">
+        <div class="ts">t = 0.012 s</div>
+        <h4>4 · OpenCV decodes</h4>
+        <p>
+          <code>detectAndDecodeMulti</code> returns <code>retval=True</code>
+          and one decoded string: <code>"TURN_LEFT"</code>. Bounding-box area:
+          <code>~38 000 px²</code> (well above the 500&nbsp;px floor).
+        </p>
+      </div>
+      <div class="timeline-step">
+        <div class="ts">t = 0.013 s</div>
+        <h4>5 · Validate &amp; publish</h4>
+        <p>
+          <code>"TURN_LEFT" ∈ VALID_COMMANDS</code> ✓. No other valid
+          detections, so the largest-bbox tiebreak is trivial. Last
+          <code>TURN_LEFT</code> fired &gt; 1.0 s ago, cooldown clears.
+          <code>String("TURN_LEFT")</code> is published on
+          <code>/qr_command</code>.
+        </p>
+      </div>
+      <div class="timeline-step">
+        <div class="ts">t = 0.014 s</div>
+        <h4>6 · Interpreter receives</h4>
+        <p>
+          <code>command_callback</code> fires. We're in <code>DRIVING</code>,
+          which accepts everything. <code>_execute_command("TURN_LEFT")</code>
+          sets <code>turn_angular_z = +0.4</code>,
+          <code>turn_duration = 4.0 s</code>, transitions to
+          <code>TURNING</code>, and publishes <code>"TURNING"</code> on
+          <code>/nav_state</code>.
+        </p>
+      </div>
+      <div class="timeline-step">
+        <div class="ts">t = 0.014 – 4.014 s</div>
+        <h4>7 · Control loop turns</h4>
+        <p>
+          Every 50 ms the timer wakes up, sees state <code>TURNING</code>,
+          checks elapsed &lt; 4.0 s, publishes
+          <code>TwistStamped(linear.x=0, angular.z=+0.4)</code> on
+          <code>/cmd_vel</code>. The base controller spins the wheels left.
+          ~80 messages are sent over the 4-second turn.
+        </p>
+      </div>
+      <div class="timeline-step">
+        <div class="ts">t = 4.014 s</div>
+        <h4>8 · Turn complete</h4>
+        <p>
+          Elapsed ≥ 4.0 s. Transition to <code>DRIVING</code>, publish
+          <code>"DRIVING"</code> on <code>/nav_state</code>, immediately emit
+          <code>TwistStamped(0.08, 0)</code>. Wheels resume forward.
+        </p>
+      </div>
+      <div class="timeline-step">
+        <div class="ts">throughout</div>
+        <h4>9 · Logger captures everything</h4>
+        <p>
+          The data logger writes 5 rows/second containing the latest command,
+          state, and twist values. On shutdown it prints
+          <em>"TURN_LEFT: 1, time in TURNING: 4.0 s (8.7%)"</em>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============== 9. HARDENING ============== -->
+  <section id="hardening">
+    <h2><span class="num">11</span>Why these specific choices</h2>
+    <p>
+      Most of the design decisions in <code>qr_nav</code> come from a specific
+      failure observed during bring-up. The system is small enough that every
+      defensive line of code can be traced to a real bug.
+    </p>
+
+    <table class="tbl">
+      <thead><tr>
+        <th>Decision</th><th>Failure it prevents</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>QoS reliability is a parameter, banner prints which one was applied</td>
+          <td>Subscriber silently receives zero callbacks if QoS doesn't match the publisher.</td>
+        </tr>
+        <tr>
+          <td><code>TwistStamped</code> on <code>/cmd_vel</code> with <code>frame_id="base_link"</code></td>
+          <td>Plain <code>Twist</code> never reaches the Husarion base controller on Jazzy.</td>
+        </tr>
+        <tr>
+          <td><code>cv2.contourArea(np.float32(points))</code> wrapped in try/except</td>
+          <td>OpenCV 4.6 rejects <code>float64</code> contours; one bad detection would otherwise crash the node and strand the robot.</td>
+        </tr>
+        <tr>
+          <td>FSM boots into <code>IDLE</code>, requires arming card</td>
+          <td>Stack launching at boot accidentally drives the robot off the bench.</td>
+        </tr>
+        <tr>
+          <td>Per-command 1.0 s cooldown</td>
+          <td>15 Hz detection × 1 card in frame = 15 redundant FSM transitions per second.</td>
+        </tr>
+        <tr>
+          <td>Largest-bbox tiebreak when multiple cards decode</td>
+          <td>Random tiebreak would mean two cards in frame produces unpredictable behaviour.</td>
+        </tr>
+        <tr>
+          <td><code>STOPPED</code> only releases on <code>GO</code></td>
+          <td>Operator wants a hard, deliberate halt; accidental drive-by of any other card shouldn't restart motion.</td>
+        </tr>
+        <tr>
+          <td><code>RECOVERING</code> creeps at <code>min_speed</code>, doesn't full-stop</td>
+          <td>Brief vision dropout shouldn't stall a delivery; full stop requires explicit <code>STOP</code>.</td>
+        </tr>
+        <tr>
+          <td>Detector + interpreter + logger are separate nodes</td>
+          <td>Lets us run Stage 1 (detector only, robot stationary) and Stage 2 (full launch, motors diverted) without code changes.</td>
+        </tr>
+        <tr>
+          <td>Cards generated by AST-parsing <code>VALID_COMMANDS</code> from the detector</td>
+          <td>Hand-edited cards drift from the strings the code accepts. Single source of truth eliminates the drift entirely.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout good">
+      <strong>The mental model:</strong> a QR card is just a serialised
+      command with optical error correction. Everything in this pipeline is
+      either decoding it, validating that it's safe to act on, or executing
+      it as a velocity. There is no other state in the system.
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<footer>
+  <p>
+    <strong>qr_nav</strong> · ROSbot 3 PRO · Project A ·
+    <code>src/qr_nav/{qr_detector_node, command_interpreter_node, data_logger_node}.py</code>
+    · companion to <code>README.md</code> and <code>DEPLOY.md</code>.
+  </p>
+</footer>
+
+<script>
+  // Active TOC highlighting on scroll.
+  const links    = document.querySelectorAll('.toc a');
+  const sections = [...links].map(a => document.querySelector(a.getAttribute('href')));
+
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      const idx = sections.indexOf(e.target);
+      if (idx === -1) return;
+      links.forEach(l => l.classList.remove('active'));
+      links[idx].classList.add('active');
+    });
+  }, { rootMargin: '-30% 0px -65% 0px', threshold: 0 });
+
+  sections.forEach(s => s && obs.observe(s));
+</script>
+
+</body>
+</html>
