@@ -1,0 +1,20 @@
+# =============================================================================
+# tools/ - Python dependencies for the laptop-side utilities
+# =============================================================================
+#
+# These scripts run on a developer laptop (no ROS), not on the robot.
+# Install once into a venv:
+#     python3 -m venv .venv && source .venv/bin/activate
+#     pip install -r requirements.txt
+#
+# Used by:
+#   generate_qr_cards.py - generates the printable QR command cards
+# =============================================================================
+
+# qrcode: QR encoder. The [pil] extra pulls in Pillow as a transitive,
+# but we also pin Pillow explicitly below to control the version range.
+qrcode[pil]>=7.4
+
+# Pillow: image rendering for the card layout (label text, A4 page, PDF
+# concatenation). >=10 ensures Image.init() and modern PDF saving work.
+Pillow>=10.0

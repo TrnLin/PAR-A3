@@ -1,0 +1,20 @@
+# =============================================================================
+# reactive_nav - Python dependencies (Project C: Reactive Obstacle Avoidance)
+# =============================================================================
+#
+# ON THE ROBOT (Husarion ROSbot 3 PRO, ROS 2 Jazzy, Ubuntu 24.04):
+#   PREFER system apt packages over pip:
+#     sudo apt install -y \
+#         ros-jazzy-rclpy \
+#         ros-jazzy-sensor-msgs \
+#         ros-jazzy-std-msgs \
+#         ros-jazzy-geometry-msgs \
+#         ros-jazzy-nav-msgs \
+#         python3-numpy
+#
+# ON A LAPTOP (development, unit testing, no ROS installed):
+#     pip install -r requirements.txt
+# =============================================================================
+
+# NumPy: sector-based LIDAR fusion + dynamic-obstacle history buffers.
+numpy>=1.21

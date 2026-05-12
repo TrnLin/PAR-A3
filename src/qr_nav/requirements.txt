@@ -1,0 +1,26 @@
+# =============================================================================
+# qr_nav - Python dependencies (Project A: QR Code Command Navigation)
+# =============================================================================
+#
+# ON THE ROBOT (Husarion ROSbot 3 PRO, ROS 2 Jazzy, Ubuntu 24.04):
+#   PREFER system apt packages over pip to avoid ABI mismatches with cv_bridge:
+#     sudo apt install -y \
+#         ros-jazzy-cv-bridge \
+#         ros-jazzy-rclpy \
+#         ros-jazzy-sensor-msgs \
+#         ros-jazzy-std-msgs \
+#         ros-jazzy-geometry-msgs \
+#         python3-opencv \
+#         python3-numpy
+#
+# ON A LAPTOP (development, unit testing, no ROS installed):
+#     pip install -r requirements.txt
+# =============================================================================
+
+# OpenCV: provides cv2.QRCodeDetector.detectAndDecodeMulti (requires >=4.6).
+# Jazzy ships 4.6.0 via python3-opencv. On the robot, do NOT pip install this -
+# it will conflict with the system OpenCV that cv_bridge was compiled against.
+opencv-python>=4.6.0
+
+# NumPy: required for np.float32 cast around cv2.contourArea.
+numpy>=1.21

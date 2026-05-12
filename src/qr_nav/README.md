@@ -101,7 +101,7 @@ All parameters in `config/qr_params.yaml`:
 Generate one A4 card per command (PNGs + a combined PDF) using:
 
 ```bash
-pip install 'qrcode[pil]' Pillow
+pip install -r tools/requirements.txt
 python tools/generate_qr_cards.py
 ```
 
