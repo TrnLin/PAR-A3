@@ -459,8 +459,9 @@
     <span class="chip"><span class="dot"></span>ROS&nbsp;2 Jazzy</span>
     <span class="chip"><span class="dot"></span>Python 3.10+</span>
     <span class="chip"><span class="dot"></span>OpenCV 4.6</span>
-    <span class="chip"><span class="dot"></span>OAK-D Pro RGB</span>
-    <span class="chip"><span class="dot"></span>3 nodes · 4 topics</span>
+    <span class="chip"><span class="dot"></span>OAK-D Pro RGB + mono + IR</span>
+    <span class="chip"><span class="dot"></span>adaptive lighting (BRIGHT/DIM/DARK)</span>
+    <span class="chip"><span class="dot"></span>3 nodes · 7 topics</span>
   </div>
 </header>
 
@@ -481,6 +482,7 @@
       <li><a href="#logger">Step 6 — Data logger</a></li>
       <li><a href="#launch">Launch &amp; configuration</a></li>
       <li><a href="#trace">End-to-end trace</a></li>
+      <li><a href="#adaptive">Adaptive lighting &amp; dark-room operation</a></li>
       <li><a href="#hardening">Why these specific choices</a></li>
     </ol>
   </nav>
@@ -1372,9 +1374,258 @@ ros2 launch qr_nav qr_nav.launch.py cmd_vel_topic:=/cmd_vel_dummy</code></pre>
     </div>
   </section>
 
-  <!-- ============== 9. HARDENING ============== -->
+  <!-- ============== 11. ADAPTIVE LIGHTING ============== -->
+  <section id="adaptive">
+    <h2><span class="num">11</span>Adaptive lighting &amp; dark-room operation</h2>
+    <p>
+      The basic pipeline (sections 1–10) only uses the OAK-D Pro's
+      <strong>RGB sensor</strong>. RGB has an IR-cut filter, so in a dark
+      room it returns near-black frames and QR decoding stops. The
+      adaptive-lighting extension lets the same robot keep working when
+      the room lights go out, by switching to the OAK-D Pro's
+      <strong>IR-sensitive mono camera</strong> and turning on the
+      onboard 850&nbsp;nm IR floodlight — both of which are already
+      bolted to the camera and were previously unused.
+    </p>
+
+    <div class="callout good">
+      <strong>Default behaviour is unchanged.</strong> With
+      <code>adaptive_lighting: true</code> (the default) the monitor
+      <em>observes</em> on every launch but only flips anything when
+      luma actually drops below the configured thresholds. In a normal
+      lab it stays in <code>BRIGHT</code> forever, no sensor swap and
+      no IR — identical to pre-adaptive behaviour. Set
+      <code>adaptive_lighting: false</code> as a kill switch.
+    </div>
+
+    <h3>The three lighting states</h3>
+    <table class="tbl">
+      <thead><tr>
+        <th>State</th><th>Sensor</th><th>cv_bridge encoding</th><th>IR floodlight</th><th>Dot projector</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><code>BRIGHT</code></td>
+          <td><code>/oak/rgb/image_raw</code></td>
+          <td><code>bgr8</code></td>
+          <td>0&nbsp;mA</td>
+          <td>0&nbsp;mA</td>
+        </tr>
+        <tr>
+          <td><code>DIM</code></td>
+          <td><code>/oak/rgb/image_raw</code></td>
+          <td><code>bgr8</code></td>
+          <td>~300&nbsp;mA (floodlight on, scene still mostly visible)</td>
+          <td>0&nbsp;mA</td>
+        </tr>
+        <tr>
+          <td><code>DARK</code></td>
+          <td><code>/oak/left/image_raw</code> (mono)</td>
+          <td><code>mono8</code></td>
+          <td>~1000&nbsp;mA (full IR illumination)</td>
+          <td>0&nbsp;mA</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      The dot projector is <strong>always</strong> forced to 0&nbsp;mA.
+      Its job is to project a speckle pattern for stereo-depth
+      texture — exactly the high-frequency noise that destroys QR
+      decoding. Even when we never visit <code>DARK</code>, the
+      detector pushes <code>i_laser_dot_projector_current = 0</code> to
+      <code>/oak</code> on every confirmed transition just in case
+      something else turned it on.
+    </p>
+
+    <h3>How the classifier decides</h3>
+    <p>
+      Two signals, combined. Both are computed in
+      <code>_update_lighting_monitor</code> on every detector frame.
+    </p>
+    <table class="tbl">
+      <thead><tr>
+        <th>Signal</th><th>What it is</th><th>What it catches</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Luma EMA</strong></td>
+          <td>Mean grayscale pixel value, low-pass-filtered with α = 0.1 (~10-frame time constant).</td>
+          <td>The fast signal. Picks up "the lights just went off" almost immediately.</td>
+        </tr>
+        <tr>
+          <td><strong>Decode-success rate</strong></td>
+          <td>Sliding window of the last 30 frames; True if any QR decoded that frame.</td>
+          <td>The slow signal. Catches "luma looks fine, but glare/contrast killed decoding."</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      The classifier picks a <em>candidate</em> state every frame from
+      these signals, with two safeguards:
+    </p>
+    <ul>
+      <li>
+        <strong>Hysteresis.</strong> Each state has a threshold to
+        <em>enter</em>; luma has to rise
+        <code>luma_bright_hysteresis</code> <em>above</em> that
+        threshold before we leave. Without this, a single bright frame
+        at the edge of <code>DARK</code> would flicker us back to
+        <code>DIM</code> and back to <code>DARK</code>.
+      </li>
+      <li>
+        <strong>Dwell.</strong> The candidate state has to remain stable
+        for <code>state_dwell_sec</code> seconds (default 2&nbsp;s) before
+        we <em>promote</em> it to the confirmed
+        <code>lighting_state</code>. One-second cloud shadows and camera
+        auto-exposure settling don't trigger sensor switches.
+      </li>
+    </ul>
+
+    <p>
+      A confirmed transition logs as
+      <code>Lighting state: BRIGHT -&gt; DIM (luma_ema=42.3, decode_rate=0.05)</code>
+      and triggers (a) the IR floodlight change and (b) the switch
+      handshake (only if the sensor mode also needs to change, i.e.
+      DIM ↔ DARK).
+    </p>
+
+    <h3>The safe-switch handshake</h3>
+    <p>
+      Sensor swaps only happen while the robot is <strong>stationary</strong>
+      (<code>IDLE</code> / <code>STOPPED</code>). The detector
+      cannot decide this on its own — that's the command interpreter's
+      domain — so the two nodes coordinate over two new topics:
+    </p>
+
+    <table class="tbl">
+      <thead><tr><th>Topic</th><th>Direction</th><th>Payload</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>/qr_detector/switch_request</code></td>
+          <td>detector → interpreter</td>
+          <td>target lighting state (e.g. <code>"DARK"</code>)</td>
+          <td>"Please bring the robot to a stationary state so I can swap sensors."</td>
+        </tr>
+        <tr>
+          <td><code>/nav_state</code></td>
+          <td>interpreter → detector</td>
+          <td>FSM state name</td>
+          <td>Existing channel. Detector polls this to know when it's safe.</td>
+        </tr>
+        <tr>
+          <td><code>/qr_detector/switch_complete</code></td>
+          <td>detector → interpreter</td>
+          <td><code>"ok"</code> or <code>"timeout"</code></td>
+          <td>"New sensor confirmed (or didn't). You may resume."</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>What "bring the robot to STOPPED" means per FSM state</h3>
+    <table class="tbl">
+      <thead><tr>
+        <th>Current FSM state</th><th>Action on <code>switch_request</code></th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><code>IDLE</code> / <code>STOPPED</code></td>
+          <td>Already safe. Interpreter re-publishes <code>/nav_state</code> so the detector (which may have late-joined) sees the current state immediately.</td>
+        </tr>
+        <tr>
+          <td><code>DRIVING</code> / <code>RECOVERING</code></td>
+          <td>Transition to <code>STOPPED</code> immediately. There's no in-flight action to finish.</td>
+        </tr>
+        <tr>
+          <td><code>TURNING</code></td>
+          <td>Set the <code>pending_switch</code> flag. The existing turn-completion branch checks this and routes to <code>STOPPED</code> instead of resuming <code>DRIVING</code>. Mid-turn interrupts are avoided entirely.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Validation + auto-resume</h3>
+    <p>
+      Once the detector observes <code>STOPPED</code> on
+      <code>/nav_state</code>, it tears down the old image subscription
+      and creates a new one on the target topic with the correct
+      encoding (<code>mono8</code> for mono, <code>bgr8</code> for RGB).
+      The decode-success window is cleared so old-sensor history
+      doesn't immediately trigger another transition.
+    </p>
+    <p>
+      The detector then enters <code>VALIDATING</code> and waits for the
+      first <em>valid</em> QR decode on the new sensor — same definition
+      as the rest of the pipeline (in <code>VALID_COMMANDS</code>,
+      bbox ≥ <code>min_bbox_area</code>). On success it publishes
+      <code>switch_complete: ok</code> and the interpreter transitions
+      <code>STOPPED → DRIVING</code>. On timeout
+      (<code>validation_timeout_sec</code>, default 10&nbsp;s) it
+      publishes <code>switch_complete: timeout</code> and the robot
+      stays <code>STOPPED</code> — operator overrides with a
+      <code>GO</code> card.
+    </p>
+
+    <div class="callout good">
+      <strong>Why "any valid decode" instead of "GO" to resume?</strong>
+      The point of validation is to prove the new sensor sees QR codes,
+      not to ask the operator to do anything. Whatever card they happen
+      to show first counts: <code>GO</code>, <code>TURN_LEFT</code>,
+      anything in <code>VALID_COMMANDS</code>. After resumption the
+      same card is then executed by the FSM normally — so showing
+      <code>TURN_LEFT</code> validates the switch AND starts a turn.
+    </div>
+
+    <h3>Telemetry for tuning</h3>
+    <p>
+      Three topics, plus the data logger's new <code>lighting_state</code>
+      CSV column, are the entire feedback surface for tuning thresholds
+      in the demo room:
+    </p>
+    <pre><code>ros2 topic echo /qr_detector/lighting_state      # BRIGHT | DIM | DARK
+ros2 topic echo /qr_detector/lighting_metrics    # JSON: luma_ema, decode_rate, candidate, switch_phase, nav_state
+ros2 topic echo /qr_detector/switch_request      # informational
+ros2 topic echo /qr_detector/switch_complete     # ok / timeout</code></pre>
+
+    <p>
+      A typical tuning session: drive the robot through a known mix of
+      lighting, then post-process the CSV to see where the natural
+      luma boundaries are. Adjust <code>luma_dim_threshold</code> and
+      <code>luma_dark_threshold</code> so the state actually flips at
+      <em>your</em> demo-room boundaries, not the defaults.
+    </p>
+
+    <h3>What's in scope for this feature, and what isn't</h3>
+    <table class="tbl">
+      <thead><tr><th>In scope</th><th>Out of scope (deliberately deferred)</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Three lighting states: <code>BRIGHT</code>, <code>DIM</code>, <code>DARK</code>.</td>
+          <td>Continuous IR brightness control (only 3 discrete levels).</td>
+        </tr>
+        <tr>
+          <td>Switches only when stationary; mid-turn defers to turn completion.</td>
+          <td>Switching while <code>RECOVERING</code> or <code>DRIVING</code> without going through STOPPED (rejected per design).</td>
+        </tr>
+        <tr>
+          <td>RGB and mono camera each subscribed exclusively, one at a time.</td>
+          <td>Multi-camera fusion (RGB + mono running simultaneously).</td>
+        </tr>
+        <tr>
+          <td>Validation by "any valid decode on new sensor".</td>
+          <td>Auto-recovery from validation timeout (operator intervenes manually).</td>
+        </tr>
+        <tr>
+          <td>Auto-exposure left to the OAK-D's on-device controller.</td>
+          <td>Manual exposure/gain control optimised for QR contrast.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============== 12. HARDENING ============== -->
   <section id="hardening">
-    <h2><span class="num">11</span>Why these specific choices</h2>
+    <h2><span class="num">12</span>Why these specific choices</h2>
     <p>
       Most of the design decisions in <code>qr_nav</code> come from a specific
       failure observed during bring-up. The system is small enough that every
@@ -1425,6 +1676,30 @@ ros2 launch qr_nav qr_nav.launch.py cmd_vel_topic:=/cmd_vel_dummy</code></pre>
         <tr>
           <td>Cards generated by AST-parsing <code>VALID_COMMANDS</code> from the detector</td>
           <td>Hand-edited cards drift from the strings the code accepts. Single source of truth eliminates the drift entirely.</td>
+        </tr>
+        <tr>
+          <td>Adaptive lighting only switches while the FSM is <code>IDLE</code>/<code>STOPPED</code></td>
+          <td>Tearing down and re-creating the image subscription mid-turn would drop frames during a time-critical open-loop rotation. Stationary swaps cost only the operator's patience.</td>
+        </tr>
+        <tr>
+          <td>Mid-turn switch requests defer via a <code>pending_switch</code> flag, applied at turn completion</td>
+          <td>If lighting drops <em>during</em> a turn, interrupting the turn would leave the robot at an arbitrary angle. Honouring the turn first preserves predictability.</td>
+        </tr>
+        <tr>
+          <td>Hysteresis + dwell on lighting state transitions</td>
+          <td>A door opening, a passing shadow, or AE settling can drag instantaneous luma across a threshold. Without hysteresis the system would flicker between sensors at the boundary.</td>
+        </tr>
+        <tr>
+          <td>Validation = first valid decode on new sensor (not a fixed delay, not a GO card)</td>
+          <td>A fixed delay can't prove the new sensor works. Requiring a GO card forces an operator in the loop. "First valid decode" is self-validating: if the new feed can read QRs, we resume — whatever card happens to be visible.</td>
+        </tr>
+        <tr>
+          <td>IR dot projector forced to 0&nbsp;mA in every state</td>
+          <td>Speckle texture for stereo depth is exactly the high-frequency noise that breaks QR decoding. Re-applied on every transition because some other process might re-enable it.</td>
+        </tr>
+        <tr>
+          <td>IR parameter writes are fire-and-forget with retry on next transition</td>
+          <td>If the OAK driver isn't up yet, the detector still runs (Pass 1/2 are camera-agnostic). The next confirmed state transition tries again — late-starting depthai eventually catches up.</td>
         </tr>
       </tbody>
     </table>

@@ -7,6 +7,12 @@ and RECOVERING states.
 The FSM boots into IDLE (zero velocity) and stays there until the first
 valid QR command arrives — so the robot never moves on launch alone. IDLE
 accepts any command; STOPPED still accepts only GO (operator-driven halt).
+
+Also participates in the adaptive-lighting switch handshake (Pass 2):
+listens on /qr_detector/switch_request to bring the robot to STOPPED
+(immediately for DRIVING/RECOVERING, after the current turn completes
+for TURNING), and on /qr_detector/switch_complete to resume to DRIVING
+once the detector confirms the new sensor sees a valid QR.
 """
 
 import time
@@ -67,11 +73,34 @@ class CommandInterpreterNode(Node):
         self.turn_duration = 0.0
         self.turn_angular_z = 0.0
 
+        # Adaptive-lighting switch handshake (Pass 2). When True, the next
+        # turn completion routes to STOPPED instead of DRIVING so the
+        # detector can swap sensors in a stationary pose. Cleared once
+        # honoured.
+        self.pending_switch = False
+
         # Subscriber
         self.command_sub = self.create_subscription(
             String,
             '/qr_command',
             self.command_callback,
+            10,
+        )
+
+        # Adaptive-lighting handshake subscribers (Pass 2). The detector
+        # asks us to bring the robot to STOPPED; once a valid decode on
+        # the new sensor proves the switch worked, it acks "ok" and we
+        # resume DRIVING.
+        self.switch_request_sub = self.create_subscription(
+            String,
+            '/qr_detector/switch_request',
+            self.switch_request_callback,
+            10,
+        )
+        self.switch_complete_sub = self.create_subscription(
+            String,
+            '/qr_detector/switch_complete',
+            self.switch_complete_callback,
             10,
         )
 
@@ -131,6 +160,72 @@ class CommandInterpreterNode(Node):
         # IDLE, DRIVING, RECOVERING all accept any command: fall through.
         # (STOPPED was already handled above; TURNING ignores commands.)
         self._execute_command(command)
+
+    def switch_request_callback(self, msg: String):
+        """Handle a lighting/sensor switch request from the detector.
+
+        Per design: switches only happen while stationary. Mid-action
+        rules:
+          - TURNING: defer until the turn completes (control_loop will
+            route to STOPPED instead of DRIVING).
+          - DRIVING / RECOVERING: stop immediately.
+          - IDLE / STOPPED: already safe — re-publish our state so the
+            detector (which may have late-joined /nav_state) sees it.
+        """
+        target_lighting = msg.data.strip()
+        timestamp = time.strftime('%H:%M:%S')
+
+        if self.state in (State.IDLE, State.STOPPED):
+            self.get_logger().info(
+                f'[{timestamp}] Switch requested ({target_lighting}); '
+                f'already in {self.state}, re-announcing state'
+            )
+            self._publish_state()
+            return
+
+        if self.state == State.TURNING:
+            self.pending_switch = True
+            self.get_logger().info(
+                f'[{timestamp}] Switch requested ({target_lighting}); '
+                f'deferring until current turn completes'
+            )
+            return
+
+        # DRIVING or RECOVERING — stop immediately and let the detector
+        # observe the STOPPED state via /nav_state.
+        self.get_logger().info(
+            f'[{timestamp}] Switch requested ({target_lighting}); '
+            f'transitioning {self.state} -> STOPPED'
+        )
+        self._transition_to(State.STOPPED)
+        self._publish_velocity(0.0, 0.0)
+
+    def switch_complete_callback(self, msg: String):
+        """Resume DRIVING when the detector confirms the new sensor works."""
+        result = msg.data.strip()
+        timestamp = time.strftime('%H:%M:%S')
+
+        if result == 'ok':
+            if self.state == State.STOPPED:
+                self.get_logger().info(
+                    f'[{timestamp}] Switch validated by detector — '
+                    f'resuming DRIVING at {self.cruise_speed} m/s'
+                )
+                self._transition_to(State.DRIVING)
+                # last_command_time so RECOVERING isn't triggered the
+                # instant we transition — give the new sensor a fair
+                # `recovery_timeout` window to publish its first command.
+                self.last_command_time = time.time()
+            else:
+                self.get_logger().info(
+                    f'[{timestamp}] Switch validated, but state is '
+                    f'{self.state} (not STOPPED) — no transition'
+                )
+        else:
+            self.get_logger().warn(
+                f'[{timestamp}] Switch did not validate (result={result!r}). '
+                f'Robot stays in {self.state}.'
+            )
 
     def _execute_command(self, command: str):
         """Execute a validated QR command."""
@@ -250,12 +345,25 @@ class CommandInterpreterNode(Node):
             # Check if turn is complete
             elapsed = now - self.turn_start_time
             if elapsed >= self.turn_duration:
-                self.get_logger().info(
-                    f'[{time.strftime("%H:%M:%S")}] Turn complete — '
-                    f'returning to DRIVING'
-                )
-                self._transition_to(State.DRIVING)
-                self._publish_velocity(self.cruise_speed, 0.0)
+                # Adaptive-lighting handshake: if a switch was requested
+                # mid-turn, route to STOPPED instead of resuming DRIVING.
+                # The detector will perform the sensor swap on STOPPED and
+                # ack via /qr_detector/switch_complete to resume.
+                if self.pending_switch:
+                    self.get_logger().info(
+                        f'[{time.strftime("%H:%M:%S")}] Turn complete — '
+                        f'honouring pending switch: transitioning to STOPPED'
+                    )
+                    self._transition_to(State.STOPPED)
+                    self._publish_velocity(0.0, 0.0)
+                    self.pending_switch = False
+                else:
+                    self.get_logger().info(
+                        f'[{time.strftime("%H:%M:%S")}] Turn complete — '
+                        f'returning to DRIVING'
+                    )
+                    self._transition_to(State.DRIVING)
+                    self._publish_velocity(self.cruise_speed, 0.0)
             else:
                 # Continue turning: no forward motion during turn
                 self._publish_velocity(0.0, self.turn_angular_z)

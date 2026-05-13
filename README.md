@@ -23,14 +23,15 @@ This project simulates real-world logistics and warehouse robotics (e.g., Amazon
 - **Map decoded instructions** to precise velocity and rotation commands.
 - **Handle edge cases** (degraded codes, oblique angles, simultaneous detections).
 - **Recover gracefully** if vision drops out or codes cannot be decoded.
+- **Adapt to ambient lighting** — automatically switch from the RGB sensor to the OAK-D Pro's IR-illuminated mono camera when the room goes dark, with a stationary handshake so the swap never interrupts a turn.
 
 ## 🧰 Hardware
 
 | Component | Specification |
 |-----------|--------------|
 | Robot Platform | Husarion ROSbot 3 PRO |
-| Primary Sensor | OAK-D Pro RGB Camera |
-| Compute | Onboard ROS 2 capable processor |
+| Primary Sensor | OAK-D Pro — RGB (12 MP) + 2× IR-sensitive mono cameras + 850 nm IR floodlight |
+| Compute | Onboard ROS 2 capable processor (Raspberry Pi 5) |
 | Actuation | ROSbot Motor Controller |
 
 <div align="center">
@@ -43,43 +44,53 @@ This project simulates real-world logistics and warehouse robotics (e.g., Amazon
 
 ## 🏗️ System Architecture
 
-The system is structured as three primary ROS 2 nodes communicating over standard topics:
+The system is structured as three primary ROS 2 nodes communicating over standard topics. The detector switches between the OAK-D Pro's RGB stream and its IR-illuminated mono stream based on ambient lighting, coordinated with the interpreter via a small handshake so swaps only happen while the robot is stationary.
 
 ```text
-┌──────────────────────────────────────────────────────┐
-│              ROSbot 3 PRO Hardware                   │
-│  OAK-D Pro RGB (/oak/rgb/image_raw)                  │
-└────────────────────────┬─────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────┐
-│              QR DETECTOR NODE (qr_detector)          │
-│  • OpenCV QRCodeDetector with detectAndDecodeMulti() │
-│  • Preprocessing: CLAHE + adaptive threshold fallback│
-│  • Validates against 7 known commands                │
-│  • Multi-QR: selects largest bbox (closest code)     │
-│  • 1.0s cooldown per command (debounce)              │
-│  Publishes: /qr_command, /qr_detections              │
-└────────────────────────┬─────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────┐
-│       COMMAND INTERPRETER NODE (command_interpreter) │
-│  • FSM: IDLE, DRIVING, TURNING, STOPPED, RECOVERING  │
-│  • 7 commands mapped to velocity behaviors           │
-│  • Timed turns (90°=2s, 180°=4s)                     │
-│  • STOP waits for GO; RECOVERING on timeout          │
-│  Publishes: /cmd_vel, /nav_state                     │
-└────────────────────────┬─────────────────────────────┘
-                         │
-                         ▼
-                  ROSbot Motors (/cmd_vel)
+┌────────────────────────────────────────────────────────────────┐
+│                  ROSbot 3 PRO  ·  OAK-D Pro                    │
+│   /oak/rgb/image_raw   (BRIGHT/DIM)                            │
+│   /oak/left/image_raw  (DARK, mono + IR floodlight)            │
+│   /oak  parameter node — i_floodlight_brightness, projector    │
+└──────────────────────────────────┬─────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────┐
+│              QR DETECTOR NODE (qr_detector)                    │
+│  • OpenCV QRCodeDetector with detectAndDecodeMulti()           │
+│  • Preprocessing: CLAHE + adaptive threshold fallback          │
+│  • Validates against 7 known commands                          │
+│  • Multi-QR: selects largest bbox (closest code)               │
+│  • 1.0s cooldown per command (debounce)                        │
+│  • Lighting monitor (BRIGHT/DIM/DARK) with hysteresis + dwell  │
+│  • Switch handshake: gates on /nav_state == IDLE/STOPPED       │
+│  • IR floodlight control via AsyncParameterClient('/oak')      │
+│  Publishes: /qr_command, /qr_detections,                       │
+│             /qr_detector/lighting_state, /lighting_metrics,    │
+│             /qr_detector/switch_request, /switch_complete      │
+└──────────────────────────────────┬─────────────────────────────┘
+                                   │  /qr_command,
+                                   │  switch_request / switch_complete
+                                   ▼
+┌────────────────────────────────────────────────────────────────┐
+│       COMMAND INTERPRETER NODE (command_interpreter)           │
+│  • FSM: IDLE, DRIVING, TURNING, STOPPED, RECOVERING            │
+│  • 7 commands mapped to velocity behaviors                     │
+│  • Timed turns (90°=2s, 180°=4s)                               │
+│  • STOP waits for GO; RECOVERING on timeout                    │
+│  • Switch handshake: pending_switch routes turn completion     │
+│    to STOPPED; auto-resume on switch_complete:ok               │
+│  Publishes: /cmd_vel (TwistStamped), /nav_state                │
+└──────────────────────────────────┬─────────────────────────────┘
+                                   │
+                                   ▼
+                       ROSbot Motors (/cmd_vel)
 
-┌──────────────────────────────────────────────────────┐
-│              DATA LOGGER NODE (qr_logger)            │
-│  • Logs commands, detections, states to CSV          │
-│  • Summary on shutdown: counts per command type      │
-└──────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│              DATA LOGGER NODE (qr_logger)                      │
+│  • Logs commands, detections, FSM state, lighting state to CSV │
+│  • Summary on shutdown: counts per command + state distributions│
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🧠 Navigation Policy (FSM)
@@ -114,25 +125,65 @@ A Finite State Machine ensures reliable transitions between behaviors and preven
 
 - **Signal Loss**: A configurable `recovery_timeout` drops the robot into a safe `RECOVERING` crawl state if visual cues are lost.
 
+- **Ambient Lighting**: An adaptive lighting monitor classifies the scene as `BRIGHT` / `DIM` / `DARK` from frame luma + decode-success rate, and switches the detector between the RGB and IR-illuminated mono cameras automatically. See the *Adaptive Lighting* section below.
+
+## 🌗 Adaptive Lighting
+
+The OAK-D Pro ships with two **IR-sensitive mono cameras** and an **850 nm IR floodlight** in addition to the RGB sensor. By default we use only RGB; the adaptive monitor extends this so the robot keeps working in dim or fully dark rooms.
+
+### Three lighting states
+
+| State | Sensor used | IR floodlight | Dot projector |
+|-------|-------------|---------------|---------------|
+| `BRIGHT` | `/oak/rgb/image_raw` (bgr8) | 0 mA | 0 mA |
+| `DIM` | `/oak/rgb/image_raw` (bgr8) | ~300 mA | 0 mA |
+| `DARK` | `/oak/left/image_raw` (mono8) | ~1000 mA | 0 mA |
+
+The dot projector is **always** forced to 0 — its speckle pattern destroys QR decoding.
+
+### Safe-switch handshake
+
+Sensor swaps only happen while the robot is stationary (`IDLE` or `STOPPED`). The detector publishes `/qr_detector/switch_request`; the interpreter responds based on its FSM state:
+
+| Current FSM state | Behaviour on switch request |
+|-------------------|------------------------------|
+| `IDLE` / `STOPPED` | Already safe — re-publish `/nav_state` so the detector proceeds immediately. |
+| `DRIVING` / `RECOVERING` | Transition to `STOPPED` immediately (no in-flight action to finish). |
+| `TURNING` | Set `pending_switch`; finish the turn, then route to `STOPPED` instead of `DRIVING`. Mid-turn interrupts are avoided. |
+
+Once stationary, the detector resubscribes to the new sensor, enters a `VALIDATING` phase, and waits for the **first valid QR decode** on the new feed. On success it publishes `/qr_detector/switch_complete: ok` and the interpreter resumes `STOPPED → DRIVING` automatically. On timeout (`validation_timeout_sec`, default 10 s) the robot stays `STOPPED` until the operator shows a `GO` card.
+
+### Kill switch
+
+Set `adaptive_lighting: false` in [`src/config/qr_params.yaml`](src/config/qr_params.yaml) to revert to pre-adaptive behaviour (RGB only, no IR control, no handshake). The lighting monitor still observes silently but takes no action.
+
+Full bring-up procedure for dark-room operation is in [`src/docs/DEPLOY.md`](src/docs/DEPLOY.md) (Stage 5). Deeper design rationale, the classifier internals, and the in-scope / out-of-scope boundary are documented in [`src/docs/qr_nav_explained.html`](src/docs/qr_nav_explained.html) (section 11).
+
 ## 📦 Folder Structure
 ```cmd
 PAR-A3/
-├── qr_cards/                               # Generated printable QR cards
-├── public/                               
+├── qr_cards/                                 # Generated printable QR cards
+├── public/                                   # Static assets (figures)
 ├── src/
-│   └── qr_nav/
-│       ├── config/
-│       │   └── qr_params.yaml              # Tunable speeds, thresholds & QoS
-│       ├── launch/
-│       │   └── qr_nav.launch.py
-│       ├── qr_nav/
-│       │   ├── qr_detector_node.py         # OAK-D perception & validation
-│       │   ├── command_interpreter_node.py # FSM & velocity publisher
-│       │   └── data_logger_node.py         # CSV metric logging
-|       ├── utils/
-|       |   └── generate_qr_cards.py        # AST-parser to sync cards with codebase
-│       ├── package.xml
-│       └── setup.py
+│   ├── config/
+│   │   └── qr_params.yaml                    # Tunable speeds, thresholds, QoS,
+│   │                                         # adaptive-lighting + IR knobs
+│   ├── launch/
+│   │   └── qr_nav.launch.py
+│   ├── qr_nav/
+│   │   ├── qr_detector_node.py               # OAK-D perception, lighting monitor,
+│   │   │                                     # switch handshake, IR control
+│   │   ├── command_interpreter_node.py       # FSM, velocity publisher,
+│   │   │                                     # pending-switch handling
+│   │   └── data_logger_node.py               # CSV metric logging incl. lighting_state
+│   ├── utils/
+│   │   └── generate_qr_cards.py              # AST-parser to sync cards with codebase
+│   ├── docs/
+│   │   ├── DEPLOY.md                         # End-to-end deployment guide
+│   │   ├── LESSONS_LEARNED.md                # Forensic record of bring-up issues
+│   │   └── qr_nav_explained.html             # Long-form walkthrough of the pipeline
+│   ├── package.xml
+│   └── setup.py
 ├── README.md
 └── requirements.txt
 ```
@@ -184,6 +235,7 @@ Data for evaluation is automatically logged to CSV files in `/tmp/qr_nav_logs` b
 | Detection Accuracy | % of QR codes correctly detected and decoded. |
 | Command Execution Accuracy | % of correct maneuvers performed in response to decoded strings. |
 | Robustness | Performance under varying lighting, angles ($0^{\circ}$, $30^{\circ}$, $45^{\circ}$), and distances (0.3m, 0.6m, 1.0m). |
+| Low-Light Operation | Adaptive-lighting transitions across `BRIGHT`/`DIM`/`DARK`, sensor switch success rate, validation-timeout rate, and detection accuracy under IR illumination. Logged per-run via the `lighting_state` CSV column and the `/qr_detector/lighting_metrics` topic. |
 | Failure Analysis | Categorization of failure modes (e.g., missed detections vs. false positive states). |
 
 ## 👥 Contribution

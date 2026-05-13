@@ -214,7 +214,120 @@ Then escalate:
 
 ---
 
-## 7. Harvest the logs
+## 7. Stage 5 — Adaptive lighting bring-up (optional, for dark-room operation)
+
+The detector ships with an adaptive lighting monitor that classifies the scene as `BRIGHT` / `DIM` / `DARK` and, in `DARK`, switches to the OAK-D Pro's mono camera + IR floodlight. Switches only happen while the robot is stationary (`IDLE` / `STOPPED`); a switch requested mid-turn is deferred until the turn finishes, mid-drive triggers an immediate auto-stop, and resumption only happens after a valid QR is decoded on the new sensor.
+
+This stage is **opt-in**. With `adaptive_lighting: true` (the default), the monitor *observes* on every launch but only changes anything when luma actually drops below the configured thresholds. In a normal lab it stays in `BRIGHT` forever and behaves identically to Stage 1–4.
+
+### 7.1 One-time bot-side verification (do this once per OAK driver upgrade)
+
+Husarion has renamed depthai topics + params across releases, so verify before relying on the defaults.
+
+```bash
+ssh husarion@192.168.1.150
+
+ros2 topic list | grep oak                         # mono topic name
+ros2 param list /oak 2>/dev/null | grep -iE 'flood|laser|ir'   # IR param names
+ros2 topic info /oak/rgb/image_raw -v             # confirm RELIABLE / VOLATILE
+```
+
+Match these against the defaults in [`qr_params.yaml`](config/qr_params.yaml):
+
+| YAML key                    | Default                            | What you're checking                                |
+| --------------------------- | ---------------------------------- | --------------------------------------------------- |
+| `mono_image_topic`          | `/oak/left/image_raw`              | `ros2 topic list` shows it under `/oak/`            |
+| `depthai_node_name`         | `/oak`                             | The OAK camera node has this exact namespace        |
+| `floodlight_param_name`     | `i_floodlight_brightness`          | `ros2 param list /oak` shows this param             |
+| `dot_projector_param_name`  | `i_laser_dot_projector_current`    | Same. Older releases dropped the `i_` prefix.       |
+
+If any name differs, edit the YAML — **no code change needed**. Then `colcon build --packages-select qr_nav --symlink-install` and continue.
+
+If `AsyncParameterClient` isn't available on the robot's `rclpy` (pre-Iron), the detector will log a warning and skip IR control; lighting state is still observed and published, but you'll have to enable the floodlight manually with `ros2 param set /oak ...`.
+
+### 7.2 Sanity-check the monitor (no motion)
+
+Stationary detector, robot still on its box from Stage 3 or on the floor on `/cmd_vel_dummy`:
+
+```bash
+ros2 run qr_nav qr_detector \
+  --ros-args --params-file ~/par-a3/install/qr_nav/share/qr_nav/config/qr_params.yaml
+```
+
+In a second session:
+
+```bash
+ros2 topic echo /qr_detector/lighting_state            # plain state name
+ros2 topic echo /qr_detector/lighting_metrics          # JSON with luma_ema, decode_rate, etc.
+```
+
+You should see `BRIGHT` and a `luma_ema` value somewhere around 100–180 in normal indoor light. Now:
+
+1. **Dim the lights** halfway. Wait `state_dwell_sec` (default 2 s). State should flip to `DIM`. `luma_ema` should drop into the 30–60 range.
+2. **Lights off**. After another `state_dwell_sec`, state flips to `DARK`. If the IR controller succeeded, you'll see `IR applied: floodlight=1000 mA, projector=0 mA` in the detector log and the OAK-D's front face glows faintly red.
+3. **Lights on again**. State recovers `DARK` → `DIM` → `BRIGHT` as you cross the upper hysteresis thresholds (`luma_dark + luma_bright_hysteresis`, etc.).
+
+If transitions flicker rapidly at the boundary, increase `state_dwell_sec` or `luma_bright_hysteresis`. If transitions are too slow to be useful, lower them. Tune from the `lighting_metrics` log — don't guess.
+
+### 7.3 Full handshake under motion
+
+Wheels off the ground (Stage 3 setup) or on a `cmd_vel_topic:=/cmd_vel_dummy` floor (Stage 2 setup):
+
+```bash
+ros2 launch qr_nav qr_nav.launch.py cmd_vel_topic:=/cmd_vel_dummy
+```
+
+Watch all three in separate sessions:
+
+```bash
+ros2 topic echo /qr_detector/lighting_state
+ros2 topic echo /qr_detector/switch_request
+ros2 topic echo /qr_detector/switch_complete
+ros2 topic echo /nav_state
+```
+
+Test sequence:
+
+1. Show `GO` to arm. `nav_state` → `DRIVING`.
+2. Kill the lights. Watch the sequence:
+   - `lighting_state` flips to `DARK` after `state_dwell_sec`.
+   - `switch_request: DARK` is published.
+   - `nav_state` flips `DRIVING` → `STOPPED` (the detector saw `DRIVING` ⇒ immediate stop).
+   - Detector log shows `Performing switch: subscribing to /oak/left/image_raw as MONO` and `IR applied: floodlight=1000 mA, projector=0 mA`.
+3. Show **any** valid card to the camera (the IR-illuminated mono stream will see it).
+   - `switch_complete: ok` is published.
+   - `nav_state` flips `STOPPED` → `DRIVING`.
+4. Now show `TURN_LEFT`, then *immediately* (mid-turn) lights on again. The `BRIGHT` transition's switch request should be **deferred** — `nav_state` stays `TURNING` until the turn completes, then goes `STOPPED` (not `DRIVING`). Then a valid QR on RGB resumes.
+
+If step 4 transitions early (interrupts the turn), the pending-switch logic in [`command_interpreter_node.py`](qr_nav/command_interpreter_node.py) regressed — file a bug.
+
+### 7.4 Common knobs (in [`qr_params.yaml`](config/qr_params.yaml))
+
+| Knob                          | What it does                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------- |
+| `adaptive_lighting: false`    | Kill switch. Reverts to pre-adaptive behaviour exactly (RGB only, no IR).       |
+| `luma_dim_threshold`          | Enter `DIM` below this 0–255 luma. Raise to be more aggressive about going dim. |
+| `luma_dark_threshold`         | Enter `DARK` below this. Below ~20 the room is very dark for a phone camera.    |
+| `luma_bright_hysteresis`      | How much luma has to *rise* before we leave a darker state. Stops flicker.      |
+| `state_dwell_sec`             | Minimum stable time before a candidate state is promoted. Higher = lazier.      |
+| `validation_timeout_sec`      | Max wait for first valid QR on the new sensor before giving up.                 |
+| `ir_floodlight_dark_mA`       | OAK-D floodlight current in `DARK` (0–1500 mA). 1000 is a safe starting point. |
+
+### 7.5 Disabling cleanly
+
+If adaptive lighting causes a regression on demo day:
+
+```bash
+nano ~/par-a3/repo/src/qr_nav/config/qr_params.yaml
+# set adaptive_lighting: false
+cd ~/par-a3 && colcon build --packages-select qr_nav --symlink-install && source install/setup.bash
+```
+
+The detector returns to RGB-only operation with no IR poking. No code is removed; the monitor still computes luma silently but skips all transitions, sensor switches, and IR parameter calls.
+
+---
+
+## 8. Harvest the logs
 
 Logs go to `/tmp/qr_nav_logs/qr_log_<timestamp>.csv` on the robot. `/tmp` wipes on reboot, so pull them off **before** powering down:
 
@@ -224,7 +337,7 @@ mkdir -p logs
 scp 'husarion@192.168.1.150:/tmp/qr_nav_logs/qr_log_*.csv' ./logs/
 ```
 
-These are the raw data for the report's "Detection accuracy" and "Command execution accuracy" sections. Organise by run, e.g. `logs/2026-05-09_calibration_1.csv`.
+These are the raw data for the report's "Detection accuracy" and "Command execution accuracy" sections. Each row also includes the `lighting_state` published by the detector — useful for verifying that the adaptive monitor saw what you expected during the run. Organise by run, e.g. `logs/2026-05-09_calibration_1.csv`.
 
 ---
 
@@ -239,6 +352,12 @@ These are the raw data for the report's "Detection accuracy" and "Command execut
 | Watch decoded commands live                 | `ros2 topic echo /qr_command`                                                                                  |
 | Watch FSM state live                        | `ros2 topic echo /nav_state`                                                                                   |
 | Watch motor commands live                   | `ros2 topic echo /cmd_vel`                                                                                     |
+| Watch lighting state live                   | `ros2 topic echo /qr_detector/lighting_state`                                                                  |
+| Watch lighting metrics (luma, decode rate)  | `ros2 topic echo /qr_detector/lighting_metrics`                                                                |
+| Watch adaptive-lighting switch handshake    | `ros2 topic echo /qr_detector/switch_request` (and `/qr_detector/switch_complete`)                             |
+| Confirm OAK IR params exist                 | `ros2 param list /oak \| grep -iE 'flood\|laser\|ir'`                                                          |
+| Manually force OAK floodlight on (test)     | `ros2 param set /oak i_floodlight_brightness 1000 && ros2 param set /oak i_laser_dot_projector_current 0`     |
+| Disable adaptive lighting (kill switch)     | Edit [`qr_params.yaml`](config/qr_params.yaml) → `adaptive_lighting: false`, rebuild                            |
 | Manual teleop (Jazzy stamped)               | `ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p stamped:=true`                              |
 | Manual one-shot e-stop                      | `ros2 topic pub --once /cmd_vel geometry_msgs/msg/TwistStamped '{header: {frame_id: base_link}}'`              |
 | Full launch, motors live                    | `ros2 launch qr_nav qr_nav.launch.py`                                                                          |
@@ -259,4 +378,10 @@ These are the raw data for the report's "Detection accuracy" and "Command execut
 | Robot turns ~45° instead of 90°                                               | `turn_90_duration` not re-derived after `turn_speed` change                                  | `duration = 1.5708 / turn_speed` — see comments in [`qr_params.yaml`](config/qr_params.yaml)                              |
 | Robot stuck after a `STOP`                                                    | `STOPPED` only accepts `GO`                                                                  | Show `GO` card; or one-shot publish a `Twist` over teleop                                                                 |
 | Robot keeps creeping after vision lost                                        | `RECOVERING` runs at `min_speed`, not zero                                                    | Send `STOP` card or use teleop e-stop                                                                                     |
+| `IR partial/failed` warning, floodlight never turns on                        | `floodlight_param_name` / `dot_projector_param_name` don't match this depthai-ros release    | Run `ros2 param list /oak \| grep -iE 'flood\|laser\|ir'` and update the YAML to match. Rebuild.                          |
+| `Could not build AsyncParameterClient ... IR control disabled`                | rclpy on the robot predates Iron, or `/oak` node is down                                     | If `/oak` is down: bring up the OAK driver first. If rclpy is old: set IR manually with `ros2 param set /oak ...`.        |
+| Lighting state flickers between `BRIGHT` and `DIM` at boundary                | `state_dwell_sec` or `luma_bright_hysteresis` too low                                        | Raise both in [`qr_params.yaml`](config/qr_params.yaml); 2 s dwell + 20 hysteresis is the starting point.                 |
+| Sensor switch requested but `nav_state` never reaches STOPPED                 | Interpreter not running, or `/qr_detector/switch_request` not connected                       | `ros2 topic info /qr_detector/switch_request` should show 1 subscriber. Restart `command_interpreter_node` if not.        |
+| Sensor switch succeeds but `switch_complete: timeout`                         | No QR card in front of the new sensor inside `validation_timeout_sec`                         | Hold a QR card to the camera. Detector publishes `ok` on first valid decode, robot resumes DRIVING.                       |
+| Adaptive lighting misfires on demo day                                         | Any of the above                                                                              | Kill switch: set `adaptive_lighting: false` in [`qr_params.yaml`](config/qr_params.yaml), rebuild. Stack reverts to RGB-only. |
 | `colcon build` works but `ros2 run` shows old behaviour                        | Stale install: previous build was non-symlink                                                | `cd ~/par-a3 && rm -rf build install log && colcon build --packages-select qr_nav --symlink-install && source install/setup.bash` |

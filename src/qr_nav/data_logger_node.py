@@ -54,6 +54,10 @@ class DataLoggerNode(Node):
             'cmd_linear_x',
             'cmd_angular_z',
             'detection_event',
+            # Lighting state published by qr_detector (Pass 1 adaptive
+            # lighting observability). Empty string until the first
+            # publish on /qr_detector/lighting_state arrives.
+            'lighting_state',
         ])
 
         # Tracking state
@@ -64,6 +68,7 @@ class DataLoggerNode(Node):
         self.latest_cmd_linear_x = 0.0
         self.latest_cmd_angular_z = 0.0
         self.detection_event = False
+        self.latest_lighting_state = ''
 
         # Statistics
         self.total_commands = 0
@@ -71,6 +76,10 @@ class DataLoggerNode(Node):
         self.state_time = Counter()  # state -> accumulated seconds
         self.last_state = ''
         self.last_state_time = time.time()
+        # Lighting-state distribution, same shape as state_time.
+        self.lighting_state_time = Counter()
+        self.last_lighting_state = ''
+        self.last_lighting_state_time = time.time()
 
         # Subscribers
         self.qr_command_sub = self.create_subscription(
@@ -84,6 +93,12 @@ class DataLoggerNode(Node):
         )
         self.cmd_vel_sub = self.create_subscription(
             TwistStamped, '/cmd_vel', self.cmd_vel_callback, 10
+        )
+        self.lighting_state_sub = self.create_subscription(
+            String,
+            '/qr_detector/lighting_state',
+            self.lighting_state_callback,
+            10,
         )
 
         # Logging timer
@@ -123,6 +138,17 @@ class DataLoggerNode(Node):
         self.latest_cmd_linear_x = msg.twist.linear.x
         self.latest_cmd_angular_z = msg.twist.angular.z
 
+    def lighting_state_callback(self, msg: String):
+        """Handle lighting-state updates from qr_detector."""
+        now = time.time()
+        if self.last_lighting_state:
+            elapsed_in_state = now - self.last_lighting_state_time
+            self.lighting_state_time[self.last_lighting_state] += elapsed_in_state
+
+        self.latest_lighting_state = msg.data
+        self.last_lighting_state = msg.data
+        self.last_lighting_state_time = now
+
     def log_tick(self):
         """Write a row to the CSV at the configured rate."""
         now = time.time()
@@ -138,6 +164,7 @@ class DataLoggerNode(Node):
             f'{self.latest_cmd_linear_x:.4f}',
             f'{self.latest_cmd_angular_z:.4f}',
             self.detection_event,
+            self.latest_lighting_state,
         ])
         self.csv_file.flush()
 
@@ -149,11 +176,14 @@ class DataLoggerNode(Node):
 
     def print_summary(self):
         """Print a summary of the logged session."""
-        # Accumulate time for the final state
+        # Accumulate time for the final state(s)
         now = time.time()
         if self.last_state:
             elapsed_in_state = now - self.last_state_time
             self.state_time[self.last_state] += elapsed_in_state
+        if self.last_lighting_state:
+            elapsed_in_lighting = now - self.last_lighting_state_time
+            self.lighting_state_time[self.last_lighting_state] += elapsed_in_lighting
 
         total_elapsed = now - self.start_time
 
@@ -172,6 +202,14 @@ class DataLoggerNode(Node):
         if self.state_time:
             self.get_logger().info('State distribution:')
             for state, duration in sorted(self.state_time.items()):
+                pct = (duration / total_elapsed * 100) if total_elapsed > 0 else 0.0
+                self.get_logger().info(
+                    f'  {state}: {duration:.1f}s ({pct:.1f}%)'
+                )
+
+        if self.lighting_state_time:
+            self.get_logger().info('Lighting-state distribution:')
+            for state, duration in sorted(self.lighting_state_time.items()):
                 pct = (duration / total_elapsed * 100) if total_elapsed > 0 else 0.0
                 self.get_logger().info(
                     f'  {state}: {duration:.1f}s ({pct:.1f}%)'

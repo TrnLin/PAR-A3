@@ -21,6 +21,70 @@ qr_detector:
     # against a RELIABLE publisher will silently receive zero callbacks.
     image_qos_reliability: "reliable" # "reliable" or "best_effort"
 
+    # --- Adaptive lighting (Pass 1: observe; Pass 2+: switch + IR) ---
+    # Master enable. When false, the lighting monitor is bypassed and
+    # behaviour is identical to the pre-adaptive version. Useful as a
+    # kill-switch if the heuristic misfires on demo day.
+    adaptive_lighting: true
+
+    # Mono camera topic used in DARK mode (Pass 2+). Verify on the bot
+    # with `ros2 topic list | grep oak` — Husarion's depthai-ros release
+    # has shipped /oak/left/image_raw, /oak/stereo/left/image_raw, and
+    # /oak/mono_left/image_raw across versions.
+    mono_image_topic: "/oak/left/image_raw"
+
+    # Luma thresholds (0–255, computed on the post-CLAHE grayscale frame).
+    # Enter DIM below luma_dim_threshold; enter DARK below
+    # luma_dark_threshold; rise luma_bright_hysteresis above the threshold
+    # to leave the darker state (prevents flicker at the boundary).
+    luma_dim_threshold: 60.0
+    luma_dark_threshold: 25.0
+    luma_bright_hysteresis: 20.0
+
+    # Exponential moving average smoothing for per-frame luma.
+    # 0.1 => ~10-frame time constant. Lower = smoother but slower.
+    luma_ema_alpha: 0.1
+
+    # Minimum dwell time (seconds) before a candidate state can be promoted
+    # to the confirmed lighting_state. Prevents one-second clouds and
+    # camera AE settling artifacts from triggering a switch.
+    state_dwell_sec: 2.0
+
+    # Sliding-window length (in detector ticks, ~detection_rate_hz) for
+    # decode-success rate. 30 frames @ 15 Hz = ~2 seconds of decode history.
+    decode_window_frames: 30
+    # If decode_rate stays at or below this floor across a full window
+    # AND luma is near a transition boundary, force one step darker.
+    # Default 0.0 means "force escalate only on total decode failure".
+    decode_failure_threshold: 0.0
+
+    # /qr_detector/lighting_state publish rate. Independent of the frame
+    # rate so subscribers still get updates if the camera stalls.
+    lighting_publish_rate_hz: 2.0
+
+    # Maximum time (s) to wait for a valid QR decode on the NEW sensor
+    # after a switch. On timeout the detector publishes "timeout" on
+    # /qr_detector/switch_complete; the interpreter leaves the robot in
+    # STOPPED and the operator must intervene with a GO card.
+    validation_timeout_sec: 10.0
+
+    # --- Pass 3: IR floodlight + dot-projector control ---
+    # Names of the depthai camera ROS node and its IR parameters. Verify
+    # on the bot with `ros2 param list /oak | grep -iE 'flood|laser|ir'`.
+    # The recent depthai-ros-driver uses the names below; older releases
+    # used `floodlight_brightness` / `laser_dot_projector_current` (no
+    # `i_` prefix). If yours differ, override here only — no code change.
+    depthai_node_name: "/oak"
+    floodlight_param_name: "i_floodlight_brightness"
+    dot_projector_param_name: "i_laser_dot_projector_current"
+
+    # IR floodlight current (mA) per lighting state. OAK-D Pro takes
+    # roughly 0..1500 mA. The dot projector is ALWAYS forced to 0 in
+    # every state — its speckle pattern destroys QR decoding.
+    ir_floodlight_bright_mA: 0
+    ir_floodlight_dim_mA: 300
+    ir_floodlight_dark_mA: 1000
+
 command_interpreter:
   ros__parameters:
     # --- Speed ---
