@@ -68,6 +68,14 @@ qr_detector:
     # STOPPED and the operator must intervene with a GO card.
     validation_timeout_sec: 10.0
 
+    # On validation timeout the detector reverts to the RGB feed (so
+    # the lighting monitor can recover) and then suppresses retries
+    # to the same target sensor for this many seconds. Prevents
+    # ping-ponging when the underlying problem (no mono frames, phone
+    # QR undecodable under IR) hasn't changed. Set to 0 to retry
+    # immediately on the next confirmed lighting transition.
+    switch_failure_cooldown_sec: 30.0
+
     # --- Pass 3: IR floodlight + dot-projector control ---
     # Names of the depthai camera ROS node and its IR parameters. Verify
     # on the bot with `ros2 param list /oak | grep -iE 'flood|laser|ir'`.

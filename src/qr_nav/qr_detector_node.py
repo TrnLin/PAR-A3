@@ -110,6 +110,15 @@ class QRDetectorNode(Node):
         # NEW sensor after a switch. Timing out leaves the robot STOPPED
         # and the operator must intervene with a GO card.
         self.declare_parameter('validation_timeout_sec', 10.0)
+        # On validation timeout, roll back to the RGB feed so the lighting
+        # monitor can recover (the alternative is being stranded on a feed
+        # whose luma_ema can't update — e.g. mono cam not publishing, or
+        # an undecodable IR-illuminated scene). After a failure, gate
+        # retries to the same target sensor for this many seconds so the
+        # detector doesn't ping-pong between sensors when the underlying
+        # condition (no mono frames, undecodable QR under IR, etc.) hasn't
+        # changed. Set to 0 to disable the cooldown.
+        self.declare_parameter('switch_failure_cooldown_sec', 30.0)
 
         # Pass 3: IR floodlight + dot-projector control via the depthai
         # camera node's parameter interface. Names ship varying across
@@ -173,6 +182,9 @@ class QRDetectorNode(Node):
         )
         self.validation_timeout_sec = (
             self.get_parameter('validation_timeout_sec').get_parameter_value().double_value
+        )
+        self.switch_failure_cooldown_sec = (
+            self.get_parameter('switch_failure_cooldown_sec').get_parameter_value().double_value
         )
 
         # IR control params
@@ -260,6 +272,11 @@ class QRDetectorNode(Node):
         self.switch_target_sensor = None
         self.switch_target_lighting = None
         self.validation_start_time = 0.0
+        # Track the most recent failed switch target so the cooldown gate
+        # in `_drive_switch_handshake` can suppress immediate retries.
+        # `None` means "no failure on record".
+        self.last_switch_failure_time = 0.0
+        self.last_switch_failure_target = None
         # Latest FSM state heard from the command interpreter on /nav_state.
         # Stays None until the interpreter sends its first state — that's
         # OK; in IDLE/STOPPED-only gating we just wait.
@@ -615,6 +632,20 @@ class QRDetectorNode(Node):
         if self.switch_phase == SWITCH_IDLE:
             desired_sensor = self._sensor_mode_for_lighting(self.lighting_state)
             if desired_sensor != self.current_sensor_mode:
+                # Cooldown after a failed validation: don't immediately
+                # re-request the same target sensor. Without this we
+                # ping-pong between RGB and MONO whenever DARK is
+                # confirmed but the mono path can't decode (no frames,
+                # phone screen under IR, etc.). Operator must let the
+                # cooldown elapse OR change conditions (lights on,
+                # printed card) for the next attempt.
+                if (
+                    self.last_switch_failure_target is not None
+                    and desired_sensor == self.last_switch_failure_target
+                    and now - self.last_switch_failure_time
+                    < self.switch_failure_cooldown_sec
+                ):
+                    return
                 self._request_switch(desired_sensor)
             return
 
@@ -691,16 +722,67 @@ class QRDetectorNode(Node):
             # apply on transition failed (depthai not up yet) this is a
             # second chance to set the correct floodlight current.
             self._apply_ir_for_state(self.lighting_state)
+            # Successful validation clears any prior failure cooldown so
+            # the opposite-direction switch can fire freely on recovery.
+            self.last_switch_failure_target = None
         else:
+            failed_sensor = self.current_sensor_mode
             self.get_logger().warn(
-                f'Switch validation timed out on {self.current_sensor_mode} '
-                f'after {self.validation_timeout_sec:.1f}s — robot stays '
-                f'STOPPED until operator sends GO'
+                f'Switch validation timed out on {failed_sensor} '
+                f'after {self.validation_timeout_sec:.1f}s — reverting '
+                f'to RGB; robot stays STOPPED until operator sends GO. '
+                f'Common causes: mono topic not publishing '
+                f'({self.mono_image_topic}), or QR target not visible '
+                f'under IR (phone screens emit no IR — use a printed card).'
             )
+            self.last_switch_failure_time = time.time()
+            self.last_switch_failure_target = failed_sensor
+            # Roll back so the lighting monitor isn't stranded on a feed
+            # it can't recover from. The cooldown above prevents an
+            # immediate retry to the same (failed) sensor.
+            self._revert_to_rgb()
 
         self.switch_phase = SWITCH_IDLE
         self.switch_target_sensor = None
         self.switch_target_lighting = None
+
+    def _revert_to_rgb(self):
+        """Fail-safe rollback to the RGB feed after a validation timeout.
+
+        Without this the detector stays subscribed to a feed it can't
+        recover from (no frames, undecodable QR under IR, etc.), the
+        lighting monitor's luma_ema can never update, and the only way
+        out is to kill and relaunch the node. Reverting also resets the
+        lighting state so the monitor re-observes the room from BRIGHT
+        and decides fresh whether it's dark enough to retry.
+        """
+        if self.current_sensor_mode == SENSOR_RGB:
+            return
+        self.get_logger().info(
+            f'Reverting subscription: {self.current_sensor_mode} -> RGB '
+            f'on {self.rgb_image_topic}'
+        )
+        try:
+            self.destroy_subscription(self.image_sub)
+        except Exception as e:
+            self.get_logger().warn(f'destroy_subscription on revert failed: {e}')
+        self.image_sub = self.create_subscription(
+            Image, self.rgb_image_topic, self.image_callback, self.camera_qos
+        )
+        self.current_sensor_mode = SENSOR_RGB
+        # Reset the lighting monitor so it re-observes from scratch on
+        # the (now restored) RGB feed. Seeding luma_ema at mid-grey
+        # avoids the carryover stale-dark value triggering an immediate
+        # re-transition to DARK before any RGB frames are processed.
+        self.lighting_state = LIGHTING_BRIGHT
+        self.candidate_state = LIGHTING_BRIGHT
+        self.candidate_since = time.time()
+        self.decode_window.clear()
+        self.luma_ema = 128.0
+        # Turn IR off explicitly. _apply_ir_for_state(BRIGHT) writes
+        # floodlight=0 mA which (with the master toggle) also flips
+        # camera.i_enable_ir back to false.
+        self._apply_ir_for_state(LIGHTING_BRIGHT)
 
     # ------------------------------------------------------------------
     # IR floodlight + dot-projector control (Pass 3)
