@@ -220,6 +220,8 @@ The detector ships with an adaptive lighting monitor that classifies the scene a
 
 This stage is **opt-in**. With `adaptive_lighting: true` (the default), the monitor *observes* on every launch but only changes anything when luma actually drops below the configured thresholds. In a normal lab it stays in `BRIGHT` forever and behaves identically to Stage 1–4.
 
+> **Going deeper.** This section is the bring-up procedure (enable the feature, confirm it isn't completely broken). Once you're here, the **test procedures** for validating IR mode end-to-end — including the mid-turn deferred-switch edge case, the validation-timeout fail-safe, and what to capture for the report — live in [`TEST_IR_MODE.md`](TEST_IR_MODE.md).
+
 ### 7.1 One-time bot-side verification (do this once per OAK driver upgrade)
 
 Husarion has renamed depthai topics + params across releases, so verify before relying on the defaults.

@@ -157,7 +157,7 @@ Once stationary, the detector resubscribes to the new sensor, enters a `VALIDATI
 
 Set `adaptive_lighting: false` in [`src/config/qr_params.yaml`](src/config/qr_params.yaml) to revert to pre-adaptive behaviour (RGB only, no IR control, no handshake). The lighting monitor still observes silently but takes no action.
 
-Full bring-up procedure for dark-room operation is in [`src/docs/DEPLOY.md`](src/docs/DEPLOY.md) (Stage 5). Deeper design rationale, the classifier internals, and the in-scope / out-of-scope boundary are documented in [`src/docs/qr_nav_explained.html`](src/docs/qr_nav_explained.html) (section 11).
+Full bring-up procedure for dark-room operation is in [`src/docs/DEPLOY.md`](src/docs/DEPLOY.md) (Stage 5). Step-by-step **test procedures** (decoding under IR, edge-case verification, what to capture for the report) are in [`src/docs/TEST_IR_MODE.md`](src/docs/TEST_IR_MODE.md). Deeper design rationale, the classifier internals, and the in-scope / out-of-scope boundary are documented in [`src/docs/qr_nav_explained.html`](src/docs/qr_nav_explained.html) (section 11).
 
 ## 📦 Folder Structure
 ```cmd
@@ -180,6 +180,7 @@ PAR-A3/
 │   │   └── generate_qr_cards.py              # AST-parser to sync cards with codebase
 │   ├── docs/
 │   │   ├── DEPLOY.md                         # End-to-end deployment guide
+│   │   ├── TEST_IR_MODE.md                   # Hands-on IR / dark-room test procedures
 │   │   ├── LESSONS_LEARNED.md                # Forensic record of bring-up issues
 │   │   └── qr_nav_explained.html             # Long-form walkthrough of the pipeline
 │   ├── package.xml

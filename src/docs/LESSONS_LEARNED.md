@@ -4,7 +4,7 @@ Forensic record of every issue hit while taking `qr_nav` from "code compiles on 
 
 This is the source material for the report's *Evaluation & Discussion* section: it shows that the failure modes were systematic (mostly distro-version mismatches between the development and target environments) rather than random.
 
-> **Scope note.** This document covers the **RGB-only bring-up** (issues 1–6 below). The adaptive-lighting extension (BRIGHT / DIM / DARK sensor switching with IR illumination, added on top of this baseline) is documented separately in [DEPLOY.md §7](DEPLOY.md) and [`qr_nav_explained.html` §11](qr_nav_explained.html). New issues hit while bringing adaptive lighting to the floor should be appended here in the same forensic style — empty until the first dark-room test run.
+> **Scope note.** This document covers the **RGB-only bring-up** (issues 1–6 below). The adaptive-lighting extension (BRIGHT / DIM / DARK sensor switching with IR illumination, added on top of this baseline) is documented separately in [DEPLOY.md §7](DEPLOY.md) for the bring-up procedure, [`TEST_IR_MODE.md`](TEST_IR_MODE.md) for hands-on test procedures, and [`qr_nav_explained.html` §11](qr_nav_explained.html) for the design rationale. New issues hit while bringing adaptive lighting to the floor should be appended here in the same forensic style — empty until the first dark-room test run.
 
 ## Target platform (the recurring villain)
 
