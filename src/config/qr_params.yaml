@@ -71,12 +71,19 @@ qr_detector:
     # --- Pass 3: IR floodlight + dot-projector control ---
     # Names of the depthai camera ROS node and its IR parameters. Verify
     # on the bot with `ros2 param list /oak | grep -iE 'flood|laser|ir'`.
-    # The recent depthai-ros-driver uses the names below; older releases
-    # used `floodlight_brightness` / `laser_dot_projector_current` (no
-    # `i_` prefix). If yours differ, override here only — no code change.
+    # Husarion's depthai-ros build (verified 2026-05) namespaces these
+    # under `camera.` and uses `laser_dot_brightness` (not `_current`).
+    # Older / upstream releases use bare `i_floodlight_brightness` /
+    # `i_laser_dot_projector_current` — override here only, no code change.
     depthai_node_name: "/oak"
-    floodlight_param_name: "i_floodlight_brightness"
-    dot_projector_param_name: "i_laser_dot_projector_current"
+    floodlight_param_name: "camera.i_floodlight_brightness"
+    dot_projector_param_name: "camera.i_laser_dot_brightness"
+
+    # Husarion's depthai-ros gates the floodlight current on a master
+    # bool toggle (`camera.i_enable_ir`). Without flipping it, writing
+    # the floodlight is silently a no-op. Set to "" on builds whose
+    # floodlight current is unconditional (some upstream releases).
+    ir_enable_param_name: "camera.i_enable_ir"
 
     # IR floodlight current (mA) per lighting state. OAK-D Pro takes
     # roughly 0..1500 mA. The dot projector is ALWAYS forced to 0 in

@@ -117,6 +117,12 @@ class QRDetectorNode(Node):
         self.declare_parameter('depthai_node_name', '/oak')
         self.declare_parameter('floodlight_param_name', 'i_floodlight_brightness')
         self.declare_parameter('dot_projector_param_name', 'i_laser_dot_projector_current')
+        # Optional master IR toggle. Husarion's depthai-ros gates the
+        # floodlight current on `camera.i_enable_ir` — without flipping it,
+        # writing the floodlight is silently a no-op. Empty string disables
+        # this behaviour for upstream depthai-ros builds that don't expose
+        # a toggle (the floodlight param is unconditional there).
+        self.declare_parameter('ir_enable_param_name', '')
         # Floodlight current (mA) per confirmed lighting state. The OAK-D
         # Pro accepts roughly 0..1500 mA; values listed here are safe
         # starting points and should be re-tuned per Pass 4 in the demo
@@ -178,6 +184,9 @@ class QRDetectorNode(Node):
         )
         self.dot_projector_param_name = (
             self.get_parameter('dot_projector_param_name').get_parameter_value().string_value
+        )
+        self.ir_enable_param_name = (
+            self.get_parameter('ir_enable_param_name').get_parameter_value().string_value
         )
         self.ir_floodlight_mA = {
             LIGHTING_BRIGHT: int(
@@ -721,7 +730,21 @@ class QRDetectorNode(Node):
         if self.ir_client is None:
             return
         try:
-            params = [
+            params = []
+            # Some depthai-ros builds gate the floodlight current on a
+            # separate bool master toggle (e.g. Husarion's
+            # `camera.i_enable_ir`). When configured, push it atomically
+            # with the currents so the driver doesn't ignore the writes.
+            # Enable iff at least one IR emitter is requested non-zero.
+            if self.ir_enable_param_name:
+                params.append(
+                    Parameter(
+                        self.ir_enable_param_name,
+                        Parameter.Type.BOOL,
+                        bool(floodlight_mA > 0 or projector_mA > 0),
+                    ).to_parameter_msg()
+                )
+            params.extend([
                 Parameter(
                     self.floodlight_param_name,
                     Parameter.Type.INTEGER,
@@ -732,7 +755,7 @@ class QRDetectorNode(Node):
                     Parameter.Type.INTEGER,
                     int(projector_mA),
                 ).to_parameter_msg(),
-            ]
+            ])
             future = self.ir_client.set_parameters(params)
             future.add_done_callback(
                 lambda f: self._log_ir_result(f, floodlight_mA, projector_mA)
