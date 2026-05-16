@@ -50,5 +50,11 @@ command_interpreter:
 
 qr_logger:
   ros__parameters:
-    log_directory: "/tmp/qr_nav_logs"
+    # Empty -> data_logger_node picks a path automatically:
+    #   1. $QR_NAV_RUN_DIR if exported by tools/qr_logging_env.sh (CSV lands
+    #      next to console.log inside the active session subfolder)
+    #   2. <repo>/logs/qr_log_<TS>.csv otherwise
+    # Set to an explicit path only for ad-hoc `ros2 run qr_logger` debugging
+    # outside the wrapper, e.g. "/tmp/qr_nav_logs".
+    log_directory: ""
     log_rate_hz: 5.0

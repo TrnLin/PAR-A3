@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# qr_nav run logs — keep tracked despite the *.log rule above (line 59).
+# Every shift's session_<TS>/ folder under logs/ holds console.log files
+# that we want committed alongside qr_log.csv and cmd_meta.txt.
+!logs/**/*.log
+

@@ -57,9 +57,35 @@ source install/setup.bash
 
 ---
 
+## 1.5. Enable run logging (one-time setup)
+
+The repo ships with an auto-logging hook that captures every `qr_nav`-related `ros2` command into [`../../logs/session_<TS>/`](../../logs/). Source it once from your shell init file — on **both** the robot and the laptop:
+
+```bash
+# On the robot (Ubuntu / bash):
+echo 'source "$HOME/par-a3/repo/tools/qr_logging_env.sh"' >> ~/.bashrc
+source ~/.bashrc
+
+# On the laptop (macOS / zsh):
+echo 'source "$HOME/Documents/Coding/PAR-A3/repo/tools/qr_logging_env.sh"' >> ~/.zshrc
+exec $SHELL -l
+```
+
+Adjust the path to match your checkout.
+
+After sourcing, every `ros2 launch qr_nav …`, `ros2 run qr_nav …`, qr_nav-relevant `ros2 topic echo`, `ros2 topic hz /oak/*`, and `ros2 topic info /cmd_vel` gets its own subfolder under a per-shift `logs/session_<TS>/`, holding `console.log` + `cmd_meta.txt` (+ `qr_log.csv` for FSM launches). Non-matching commands and everything else (`colcon`, `python3`, …) pass through unchanged.
+
+At the end of a shift, run [`tools/qr_session_close.sh`](../../tools/qr_session_close.sh) to finalize `session_summary.txt`. Skipping is fine — sessions auto-start cleanly the next time.
+
+See [`../../logs/README.md`](../../logs/README.md) for full folder layout and per-stage shortcut scripts (`tools/qr_stage1_detect.sh`, `tools/qr_stage2_diverted.sh`, etc.).
+
+---
+
 ## 2. Pre-flight (3 minutes, no robot motion)
 
 Two SSH sessions on the robot, both read-only.
+
+If you set up §1.5, these commands are auto-logged. To run all three checks under a single `preflight_<TS>/` subfolder, use the shortcut: `tools/qr_preflight.sh`.
 
 **Session A — camera is alive:**
 
@@ -96,6 +122,12 @@ ros2 run qr_nav qr_detector \
   --ros-args --params-file ~/par-a3/install/qr_nav/share/qr_nav/config/qr_params.yaml
 ```
 
+Or use the logged shortcut:
+
+```bash
+tools/qr_stage1_detect.sh
+```
+
 The startup banner **must** include:
 
 ```text
@@ -122,6 +154,12 @@ Robot can be on the floor — `/cmd_vel` is remapped to `/cmd_vel_dummy` via the
 
 ```bash
 ros2 launch qr_nav qr_nav.launch.py cmd_vel_topic:=/cmd_vel_dummy
+```
+
+Or use the logged shortcut (CSV + console.log land in `logs/session_<TS>/stage2_diverted_<TS>/`):
+
+```bash
+tools/qr_stage2_diverted.sh
 ```
 
 Two more sessions:
@@ -160,6 +198,12 @@ Lift the ROSbot onto a stable box. Full launch, **no remap**:
 ros2 launch qr_nav qr_nav.launch.py
 ```
 
+Or the logged shortcut (lands under `stage3_wheels_off_<TS>/`):
+
+```bash
+tools/qr_stage3_wheels_off.sh
+```
+
 Re-run each card. Wheels should rotate the right direction/duration. **Calibrate `turn_90_duration` here:**
 
 1. Mark a wheel position with tape.
@@ -195,6 +239,12 @@ Launch:
 ros2 launch qr_nav qr_nav.launch.py
 ```
 
+Or the logged shortcut (lands under `stage4_floor_<TS>/`, with the CSV alongside `console.log`):
+
+```bash
+tools/qr_stage4_floor.sh
+```
+
 The robot boots in `IDLE` and **does not move** — `/nav_state` reports `IDLE`, `/cmd_vel` carries zero `twist`. Show a `GO` card to arm it at cruise speed; it then behaves exactly like Stage 2's `DRIVING` flow. Show `STOP` (or let it see a `STOP` card you've placed in its path) to halt; show `GO` to release from `STOPPED`.
 
 Then escalate:
@@ -216,15 +266,31 @@ Then escalate:
 
 ## 7. Harvest the logs
 
-Logs go to `/tmp/qr_nav_logs/qr_log_<timestamp>.csv` on the robot. `/tmp` wipes on reboot, so pull them off **before** powering down:
+With §1.5 enabled, every command from §2–§6 in your shift lives under `~/par-a3/repo/logs/session_<TS>/` on the robot. Each session folder contains:
+
+- `session_meta.txt` — operator, hostname, git rev, ROS_DISTRO, start time
+- `session_summary.txt` — appended by `tools/qr_session_close.sh` with end time and per-subfolder exit codes
+- One subfolder per command (`preflight_*/`, `stage1_detect_*/`, `stage2_diverted_*/`, `stage3_wheels_off_*/`, `stage4_floor_*/`, `topic_echo_*/`, …) each holding `console.log`, `cmd_meta.txt`, and `qr_log.csv` for FSM launches.
+
+Close the session before harvesting (idempotent — safe to skip):
 
 ```bash
-# from your laptop
-mkdir -p logs
-scp 'husarion@192.168.1.150:/tmp/qr_nav_logs/qr_log_*.csv' ./logs/
+# on the robot
+tools/qr_session_close.sh
 ```
 
-These are the raw data for the report's "Detection accuracy" and "Command execution accuracy" sections. Organise by run, e.g. `logs/2026-05-09_calibration_1.csv`.
+Pull the whole shift to the laptop and commit:
+
+```bash
+# from your laptop, in the repo root
+scp -r 'husarion@192.168.1.150:~/par-a3/repo/logs/session_*' ./logs/
+git add logs/session_*
+git commit -m "logs: <date> <description>"
+```
+
+`console.log` + `qr_log.csv` are the raw data for the report's "Detection accuracy" and "Command execution accuracy" sections.
+
+Note: unlike the old `/tmp/qr_nav_logs/` path, the new location survives reboots — the robot keeps the full history under `repo/logs/` until you prune it.
 
 ---
 
@@ -243,7 +309,9 @@ These are the raw data for the report's "Detection accuracy" and "Command execut
 | Manual one-shot e-stop                      | `ros2 topic pub --once /cmd_vel geometry_msgs/msg/TwistStamped '{header: {frame_id: base_link}}'`              |
 | Full launch, motors live                    | `ros2 launch qr_nav qr_nav.launch.py`                                                                          |
 | Full launch, motors diverted                | `ros2 launch qr_nav qr_nav.launch.py cmd_vel_topic:=/cmd_vel_dummy`                                            |
-| Pull logs to laptop                         | `scp 'husarion@192.168.1.150:/tmp/qr_nav_logs/qr_log_*.csv' ./logs/`                                           |
+| Run stage N with auto-logging               | `tools/qr_stage{1_detect\|2_diverted\|3_wheels_off\|4_floor}.sh`                                                |
+| Start / close a logging session             | `tools/qr_session.sh` / `tools/qr_session_close.sh`                                                            |
+| Pull a shift's logs to laptop               | `scp -r 'husarion@192.168.1.150:~/par-a3/repo/logs/session_*' ./logs/`                                         |
 
 ---
 

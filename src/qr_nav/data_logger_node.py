@@ -10,6 +10,7 @@ import os
 import time
 from collections import Counter
 from datetime import datetime
+from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
@@ -26,7 +27,7 @@ class DataLoggerNode(Node):
         super().__init__('data_logger_node')
 
         # Declare parameters
-        self.declare_parameter('log_directory', '/tmp/qr_nav_logs')
+        self.declare_parameter('log_directory', '')
         self.declare_parameter('log_rate_hz', 5.0)
 
         # Read parameters
@@ -35,14 +36,39 @@ class DataLoggerNode(Node):
         )
         log_rate_hz = self.get_parameter('log_rate_hz').get_parameter_value().double_value
 
+        # Resolve CSV path. Three tiers, highest priority first:
+        #   1. $QR_NAV_RUN_DIR  — set by tools/qr_logging_env.sh; CSV lands in
+        #      the same per-command subfolder as console.log (no timestamp
+        #      suffix needed; the folder is already timestamped).
+        #   2. log_directory param non-empty — preserve the legacy
+        #      /tmp/qr_nav_logs behaviour for ad-hoc `ros2 run qr_logger`.
+        #   3. Fallback — write to <repo>/logs/qr_log_<TS>.csv, where <repo>
+        #      is derived from this file's location (works with
+        #      --symlink-install since Path.resolve() follows the symlink
+        #      back to source).
+        run_dir = os.environ.get('QR_NAV_RUN_DIR', '').strip()
+        if run_dir:
+            self.log_directory = run_dir
+            self.csv_path = os.path.join(run_dir, 'qr_log.csv')
+        elif self.log_directory:
+            timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.csv_path = os.path.join(
+                self.log_directory, f'qr_log_{timestamp_str}.csv'
+            )
+        else:
+            # data_logger_node.py lives at repo/src/qr_nav/data_logger_node.py
+            # → parents[2] is the repo root.
+            repo_root = Path(__file__).resolve().parents[2]
+            self.log_directory = str(repo_root / 'logs')
+            timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.csv_path = os.path.join(
+                self.log_directory, f'qr_log_{timestamp_str}.csv'
+            )
+
         # Create log directory if needed
         os.makedirs(self.log_directory, exist_ok=True)
 
         # Open CSV file
-        timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.csv_path = os.path.join(
-            self.log_directory, f'qr_log_{timestamp_str}.csv'
-        )
         self.csv_file = open(self.csv_path, 'w', newline='')
         self.csv_writer = csv.writer(self.csv_file)
         self.csv_writer.writerow([
