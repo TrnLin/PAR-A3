@@ -115,7 +115,7 @@ class CommandInterpreterNode(Node):
             return
 
         # IDLE and STOPPED states: only accept GO
-        if self.state == (State.IDLE, State.STOPPED):
+        if self.state in (State.IDLE, State.STOPPED):
             if command == 'GO':
                 self._transition_to(State.DRIVING)
                 self.get_logger().info(
