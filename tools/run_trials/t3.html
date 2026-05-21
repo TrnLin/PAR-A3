@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>T3 — Angle sweep · QR Nav Trial Runner</title>
+  <script src="assets/tailwind.js"></script>
+  <link rel="stylesheet" href="assets/styles.css">
+  <script src="assets/shared.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm no-print">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+      <a href="index.html" class="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Dashboard
+      </a>
+      <div class="flex-1 min-w-0">
+        <h1 class="text-base sm:text-lg font-semibold tracking-tight">T3 · Angle sweep</h1>
+        <p class="text-xs text-slate-600">STOP card at 0.6 m · 0° / 15° / 30° / 45° · 10 reps each · records decode stage</p>
+      </div>
+      <span class="progress-badge"><span id="trial-progress-text">0 / 40</span></span>
+      <button id="download-csv-btn" class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+        Download t3_angle.csv
+      </button>
+      <button id="reset-trial-btn" class="inline-flex items-center gap-1.5 rounded-md bg-white border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50">
+        Reset T3
+      </button>
+    </div>
+    <div class="max-w-7xl mx-auto px-4 pb-2">
+      <div class="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+        <div id="trial-progress-bar" class="h-full bg-blue-600 transition-all duration-200" style="width:0%"></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+    <section class="bg-white rounded-lg shadow ring-1 ring-slate-200 p-5">
+      <header class="mb-3">
+        <h2 class="text-sm font-semibold text-slate-900">Setup</h2>
+        <p class="text-xs text-slate-500">Drives Figure F5b (accuracy vs angle) and the qualitative complementary-coverage evidence in Section V.2.4.</p>
+      </header>
+      <dl class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div><dt class="text-xs text-slate-500">Card</dt><dd class="font-medium">STOP</dd></div>
+        <div><dt class="text-xs text-slate-500">Distance</dt><dd class="font-medium">0.6 m</dd></div>
+        <div><dt class="text-xs text-slate-500">Reps / angle</dt><dd class="font-medium">10</dd></div>
+        <div><dt class="text-xs text-slate-500">Stage labels</dt><dd class="font-medium">CLAHE / fallback</dd></div>
+      </dl>
+      <div class="mt-3">
+        <label class="block text-xs font-medium text-slate-600 mb-1">Launch command:</label>
+        <div class="flex items-center gap-2">
+          <code id="t3-launch" class="flex-1 block bg-slate-900 text-emerald-300 text-xs font-mono rounded px-3 py-2 overflow-x-auto">ros2 launch qr_nav qr_nav.launch.py session_id:=t3_angle</code>
+          <button class="copy-btn rounded-md border border-slate-300 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50" data-target="t3-launch">Copy</button>
+        </div>
+      </div>
+      <div class="mt-3 rounded-md bg-violet-50 border border-violet-200 px-3 py-2 text-xs text-violet-900">
+        For each detected rep, mark which stage decoded: <code class="bg-white border border-violet-200 rounded px-1">C</code> = CLAHE (Stage 1), <code class="bg-white border border-violet-200 rounded px-1">F</code> = adaptive-threshold fallback (Stage 2). Click again to clear.
+      </div>
+    </section>
+
+    <section class="bg-white rounded-lg shadow ring-1 ring-slate-200 overflow-hidden">
+      <header class="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-900">Reps</h2>
+      </header>
+      <div class="overflow-x-auto">
+        <table class="rep-grid text-sm w-full">
+          <thead>
+            <tr id="t3-thead">
+              <th class="text-left px-3 py-2 text-xs font-semibold text-slate-600">Angle</th>
+            </tr>
+          </thead>
+          <tbody id="t3-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="text-xs text-slate-500 pt-2 pb-8">
+      <a href="index.html" class="text-blue-600 hover:underline">← Back to dashboard</a>
+    </footer>
+  </main>
+
+  <script>
+    'use strict';
+
+    let state = QRTrials.load();
+
+    function persist() {
+      QRTrials.save(state);
+      document.dispatchEvent(new Event('trial-state-changed'));
+    }
+
+    function renderHead() {
+      const tr = document.getElementById('t3-thead');
+      tr.innerHTML = `<th class="text-left px-3 py-2 text-xs font-semibold text-slate-600 sticky left-0 bg-slate-50 z-10">Angle</th>`;
+      for (let i = 1; i <= 10; i++) {
+        tr.insertAdjacentHTML('beforeend',
+          `<th class="text-center px-1 py-2 text-[11px] font-semibold text-slate-500">${i}</th>`);
+      }
+      tr.insertAdjacentHTML('beforeend',
+        `<th class="text-center px-3 py-2 text-xs font-semibold text-slate-600">Tally</th>`);
+    }
+
+    function renderBody() {
+      const tbody = document.getElementById('t3-tbody');
+      tbody.innerHTML = '';
+      for (const a of QRTrials.ANGLES) {
+        const reps = state.t3.rows[a];
+        const tr = document.createElement('tr');
+        tr.dataset.angle = a;
+
+        let cellsHtml = '';
+        reps.forEach((cell, idx) => {
+          const dVal = cell.detected === null ? '' : cell.detected;
+          const stage = cell.decode_stage || '';
+          cellsHtml += `
+            <td class="text-center px-1 py-2">
+              <div class="inline-flex flex-col items-center gap-1" data-cell="${a}|${idx}">
+                <button class="toggle-cell tri-toggle" data-field="detected" data-value="${dVal}" title="Detected">D</button>
+                <div class="flex items-center gap-0.5">
+                  <button type="button" class="stage-btn text-[10px] w-5 h-5 rounded border ${stage === 'CLAHE' ? 'bg-violet-600 border-violet-700 text-white font-bold' : 'border-slate-300 text-slate-500 hover:bg-slate-50'}" data-stage="CLAHE" title="CLAHE (Stage 1)">C</button>
+                  <button type="button" class="stage-btn text-[10px] w-5 h-5 rounded border ${stage === 'fallback' ? 'bg-amber-500 border-amber-600 text-white font-bold' : 'border-slate-300 text-slate-500 hover:bg-slate-50'}" data-stage="fallback" title="Adaptive-threshold fallback (Stage 2)">F</button>
+                </div>
+              </div>
+            </td>`;
+        });
+
+        const t = tally(reps);
+        const tallyHtml = `
+          <td class="text-center px-3 py-2 text-xs whitespace-nowrap">
+            <div><span class="text-emerald-700 font-semibold">D ${t.detected}</span><span class="text-slate-400">/${t.total}</span></div>
+            <div class="text-[11px]">
+              <span class="text-violet-700">C ${t.clahe}</span>
+              <span class="text-amber-700 ml-2">F ${t.fallback}</span>
+            </div>
+          </td>`;
+
+        tr.innerHTML = `
+          <th class="text-left px-3 py-2 font-medium text-slate-800">${a}°</th>
+          ${cellsHtml}
+          ${tallyHtml}`;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function tally(reps) {
+      let detected = 0, total = 0, clahe = 0, fallback = 0;
+      for (const cell of reps) {
+        if (cell.detected !== null) {
+          total++;
+          if (cell.detected === 1) detected++;
+        }
+        if (cell.decode_stage === 'CLAHE') clahe++;
+        else if (cell.decode_stage === 'fallback') fallback++;
+      }
+      return { detected, total, clahe, fallback };
+    }
+
+    function refreshRow(angle) {
+      const tr = document.querySelector(`tr[data-angle="${angle}"]`);
+      if (!tr) return;
+      const reps = state.t3.rows[angle];
+      tr.querySelectorAll('[data-cell]').forEach((wrap, idx) => {
+        const cell = reps[idx];
+        const btn = wrap.querySelector('[data-field="detected"]');
+        btn.dataset.value = cell.detected === null ? '' : cell.detected;
+        wrap.querySelectorAll('.stage-btn').forEach((b) => {
+          const isActive = cell.decode_stage === b.dataset.stage;
+          b.className = `stage-btn text-[10px] w-5 h-5 rounded border ${
+            isActive
+              ? (b.dataset.stage === 'CLAHE' ? 'bg-violet-600 border-violet-700 text-white font-bold' : 'bg-amber-500 border-amber-600 text-white font-bold')
+              : 'border-slate-300 text-slate-500 hover:bg-slate-50'
+          }`;
+        });
+      });
+      const t = tally(reps);
+      const tallyTd = tr.querySelectorAll('td')[10];
+      tallyTd.innerHTML = `
+        <div><span class="text-emerald-700 font-semibold">D ${t.detected}</span><span class="text-slate-400">/${t.total}</span></div>
+        <div class="text-[11px]">
+          <span class="text-violet-700">C ${t.clahe}</span>
+          <span class="text-amber-700 ml-2">F ${t.fallback}</span>
+        </div>`;
+    }
+
+    function nextValue(v) {
+      if (v === '' || v === null) return 1;
+      if (v === 1 || v === '1') return 0;
+      return null;
+    }
+
+    function init() {
+      renderHead();
+      renderBody();
+
+      const tbody = document.getElementById('t3-tbody');
+      tbody.addEventListener('click', (e) => {
+        const wrap = e.target.closest('[data-cell]');
+        if (!wrap) return;
+        const [angle, idxStr] = wrap.dataset.cell.split('|');
+        const idx = parseInt(idxStr, 10);
+
+        const tri = e.target.closest('.tri-toggle');
+        if (tri) {
+          const cur = tri.dataset.value === '' ? null : Number(tri.dataset.value);
+          state.t3.rows[angle][idx].detected = nextValue(cur);
+          persist();
+          refreshRow(angle);
+          return;
+        }
+
+        const stageBtn = e.target.closest('.stage-btn');
+        if (stageBtn) {
+          const want = stageBtn.dataset.stage;
+          const cur = state.t3.rows[angle][idx].decode_stage;
+          state.t3.rows[angle][idx].decode_stage = (cur === want) ? '' : want;
+          persist();
+          refreshRow(angle);
+        }
+      });
+
+      QRTrials.installTrialChrome('t3', {
+        onReset: () => {
+          state = QRTrials.load();
+          renderBody();
+        },
+      });
+      document.addEventListener('trial-state-changed', () => {
+        const fresh = QRTrials.load();
+        const { done, total } = QRTrials.countDone(fresh, 't3');
+        document.getElementById('trial-progress-text').textContent = `${done} / ${total}`;
+        document.getElementById('trial-progress-bar').style.width = `${total > 0 ? (done / total) * 100 : 0}%`;
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>

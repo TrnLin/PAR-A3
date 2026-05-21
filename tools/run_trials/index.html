@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR Nav — Trial Runner</title>
+  <script src="assets/tailwind.js"></script>
+  <link rel="stylesheet" href="assets/styles.css">
+  <script src="assets/shared.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+  <!-- =================================================================== -->
+  <!-- Sticky top bar                                                      -->
+  <!-- =================================================================== -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm no-print">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+      <div class="flex-1 min-w-0">
+        <h1 class="text-lg sm:text-xl font-semibold tracking-tight">QR Nav — Trial Runner</h1>
+        <p class="text-xs sm:text-sm text-slate-600">
+          <span id="global-progress-text">0 / 220 trials recorded</span>
+          · ROSbot 3 PRO + OAK-D Pro · Phase 2 protocol
+        </p>
+      </div>
+      <button id="export-all-btn"
+              class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+          <path d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Export all CSVs
+      </button>
+      <button id="reset-all-btn"
+              class="inline-flex items-center gap-1.5 rounded-md bg-white border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400">
+        Reset all
+      </button>
+    </div>
+    <div class="max-w-6xl mx-auto px-4 pb-2">
+      <div class="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+        <div id="global-progress-bar" class="h-full bg-blue-600 transition-all duration-200" style="width:0%"></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-8">
+
+    <!-- =============================================================== -->
+    <!-- Pre-session checklist                                            -->
+    <!-- =============================================================== -->
+    <section id="pre-session" class="bg-white rounded-lg shadow ring-1 ring-slate-200 p-5">
+      <header class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-base font-semibold text-slate-900">Pre-session checklist</h2>
+          <p class="text-xs text-slate-500">All five must be green before starting T1.</p>
+        </div>
+        <span id="pre-progress" class="progress-badge" data-state="empty">0 / 5</span>
+      </header>
+
+      <ul id="pre-checklist" class="space-y-3">
+        <!-- Items injected by shared/page bootstrap script below -->
+      </ul>
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- Logging convention reminder                                      -->
+    <!-- =============================================================== -->
+    <section class="bg-white rounded-lg shadow ring-1 ring-slate-200 p-5">
+      <header class="mb-3">
+        <h2 class="text-base font-semibold text-slate-900">Logging convention</h2>
+        <p class="text-xs text-slate-500">Tag every trial with its <code class="text-[11px] bg-slate-100 px-1 rounded">session_id</code> so each set lands in its own CSV.</p>
+      </header>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Launch the stack with the trial's session id:</label>
+          <div class="flex items-center gap-2">
+            <code id="launch-cmd" class="flex-1 block bg-slate-900 text-emerald-300 text-xs sm:text-sm font-mono rounded px-3 py-2 overflow-x-auto">ros2 launch qr_nav qr_nav.launch.py session_id:=t1_per_command</code>
+            <button class="copy-btn rounded-md border border-slate-300 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50" data-target="launch-cmd">Copy</button>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">CSV lands directly under <code class="text-[11px] bg-slate-100 px-1 rounded">repo/results/&lt;session_id&gt;_&lt;TS&gt;.csv</code> on the robot. After the session, pull the whole folder back to the laptop:</label>
+          <div class="flex items-center gap-2">
+            <code id="cp-cmd" class="flex-1 block bg-slate-900 text-emerald-300 text-xs sm:text-sm font-mono rounded px-3 py-2 overflow-x-auto">scp -r 'husarion@192.168.1.150:~/par-a3/repo/results/*' ./repo/results/</code>
+            <button class="copy-btn rounded-md border border-slate-300 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50" data-target="cp-cmd">Copy</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- Trial cards grid                                                 -->
+    <!-- =============================================================== -->
+    <section>
+      <header class="mb-3 flex items-end justify-between">
+        <h2 class="text-base font-semibold text-slate-900">Trial sets</h2>
+        <p class="text-xs text-slate-500">Click into a trial to record reps. Progress saves automatically.</p>
+      </header>
+      <div id="trial-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Six cards injected here -->
+      </div>
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- Post-session checklist                                           -->
+    <!-- =============================================================== -->
+    <section id="post-session" class="bg-white rounded-lg shadow ring-1 ring-slate-200 p-5">
+      <header class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-base font-semibold text-slate-900">Post-session checklist</h2>
+          <p class="text-xs text-slate-500">Tick all four before handing off to Phase 3 analysis.</p>
+        </div>
+        <span id="post-progress" class="progress-badge" data-state="empty">0 / 4</span>
+      </header>
+      <ul id="post-checklist" class="space-y-3"></ul>
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- Gotchas accordion                                                -->
+    <!-- =============================================================== -->
+    <section class="bg-white rounded-lg shadow ring-1 ring-slate-200">
+      <details class="group">
+        <summary class="cursor-pointer list-none p-5 flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-semibold text-slate-900">Common gotchas</h2>
+            <p class="text-xs text-slate-500">Verbatim from <code class="text-[11px] bg-slate-100 px-1 rounded">phases/phase-2-experiments.md</code>. Click to expand.</p>
+          </div>
+          <svg class="w-5 h-5 text-slate-400 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+            <path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </summary>
+        <div class="px-5 pb-5 -mt-2">
+          <ul class="text-sm text-slate-700 space-y-2 list-disc pl-5">
+            <li><strong>Battery dropping mid-session</strong> — record battery % at start; ROSbot motor performance degrades below ~30%.</li>
+            <li><strong>Logger session_id not applied</strong> — if the launch param didn't take, all CSVs collide. Verify the filename matches your <code class="text-[11px] bg-slate-100 px-1 rounded">session_id</code> before each run.</li>
+            <li><strong>TwistStamped timestamps drift</strong> — keep robot and laptop on the same NTP source; otherwise latency-from-decode-to-cmd_vel readings will be noisy.</li>
+            <li><strong>Cards reflective under overhead lights</strong> — print on matte paper or laminate matte side out. Glare destroys CLAHE.</li>
+            <li><strong>Don't change <code class="text-[11px] bg-slate-100 px-1 rounded">cmd_cooldown_s</code> between trials</strong> — keep all baseline parameters identical across T1–T5 so V.2.1 numbers are comparable.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <footer class="text-xs text-slate-500 pt-4 pb-8 text-center">
+      Self-contained runbook · open by double-clicking <code class="text-[11px] bg-slate-100 px-1 rounded">index.html</code> · works offline.
+    </footer>
+  </main>
+
+  <!-- =================================================================== -->
+  <!-- Bootstrap script                                                    -->
+  <!-- =================================================================== -->
+  <script>
+    'use strict';
+
+    // -------------------------------------------------------------------
+    // Trial card metadata
+    // -------------------------------------------------------------------
+    const TRIAL_CARDS = [
+      {
+        id: 't1', href: 't1.html', label: 'T1', title: 'Per-command accuracy',
+        desc: '7 commands × 10 reps at 0.6 m, 0°, normal lighting.',
+        accent: 'border-l-blue-500',
+      },
+      {
+        id: 't2', href: 't2.html', label: 'T2', title: 'Distance sweep',
+        desc: 'STOP card at 0.3, 0.6, 1.0, 1.5 m × 10 reps.',
+        accent: 'border-l-indigo-500',
+      },
+      {
+        id: 't3', href: 't3.html', label: 'T3', title: 'Angle sweep',
+        desc: 'STOP card at 0°, 15°, 30°, 45° × 10 reps; logs decode stage.',
+        accent: 'border-l-violet-500',
+      },
+      {
+        id: 't4', href: 't4.html', label: 'T4', title: 'Lighting variation',
+        desc: 'Bright / normal / dim × 10 reps with STOP card.',
+        accent: 'border-l-amber-500',
+      },
+      {
+        id: 't5', href: 't5.html', label: 'T5', title: 'Simultaneous QR',
+        desc: 'Two cards in frame × 10 reps; tests largest-bbox tie-break.',
+        accent: 'border-l-emerald-500',
+      },
+      {
+        id: 't6', href: 't6.html', label: 'T6', title: 'Ablation (min_bbox_area)',
+        desc: '15 reps baseline + 15 reps with filter off (Option A).',
+        accent: 'border-l-rose-500',
+      },
+    ];
+
+    // -------------------------------------------------------------------
+    // Pre / post checklist definitions
+    // -------------------------------------------------------------------
+    const PRE_ITEMS = [
+      {
+        key: 'colcon_build',
+        label: 'colcon build succeeds',
+        cmd: 'colcon build --packages-select qr_nav',
+      },
+      {
+        key: 'topic_hz',
+        label: 'OAK-D RGB stream is publishing at ~10 Hz',
+        cmd: 'ros2 topic hz /oak/rgb/image_raw',
+      },
+      {
+        key: 'topic_info_cmd_vel',
+        label: '/cmd_vel is TwistStamped (Husarion convention)',
+        cmd: 'ros2 topic info /cmd_vel',
+      },
+      {
+        key: 'data_logger_writes',
+        label: 'data_logger_node writes a CSV when launched (verify by running for 30 s)',
+        cmd: 'ros2 launch qr_nav qr_nav.launch.py session_id:=preflight',
+      },
+      {
+        key: 'results_dir',
+        label: 'repo/results/ directory exists for committing CSVs and screenshots',
+        cmd: 'mkdir -p repo/results/screenshots',
+      },
+    ];
+
+    const POST_ITEMS = [
+      {
+        key: 'six_csvs_present',
+        label: 'All 6 CSVs landed in repo/results/',
+        cmd: 'ls -1 repo/results/t*.csv',
+      },
+      {
+        key: 'experiment_log_entry',
+        label: 'notes/experiment-log.md has an entry per trial including any anomalies',
+        cmd: '$EDITOR notes/experiment-log.md',
+      },
+      {
+        key: 'photos_saved',
+        label: 'Photos and screenshots saved under repo/results/screenshots/',
+        cmd: 'ls -1 repo/results/screenshots/',
+      },
+      {
+        key: 'csv_spot_check',
+        label: 'Spot-checked at least one CSV schema',
+        cmd: 'head -5 repo/results/t1_per_command.csv',
+      },
+    ];
+
+    // -------------------------------------------------------------------
+    // State + rendering
+    // -------------------------------------------------------------------
+    let state = QRTrials.load();
+
+    function persist() {
+      QRTrials.save(state);
+      renderProgress();
+    }
+
+    function renderChecklist(containerId, items, bucketKey) {
+      const ul = document.getElementById(containerId);
+      ul.innerHTML = '';
+      for (const item of items) {
+        const li = document.createElement('li');
+        li.className = 'flex items-start gap-3';
+        const checked = !!state[bucketKey][item.key];
+        li.innerHTML = `
+          <label class="flex-1 flex items-start gap-3 cursor-pointer group">
+            <input type="checkbox" class="mt-1 w-5 h-5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                   ${checked ? 'checked' : ''}
+                   data-bucket="${bucketKey}" data-key="${item.key}">
+            <div class="flex-1 min-w-0">
+              <span class="text-sm font-medium text-slate-800 group-hover:text-slate-900">${item.label}</span>
+              <div class="mt-1 flex items-center gap-2">
+                <code class="flex-1 block bg-slate-50 border border-slate-200 text-[11px] font-mono text-slate-700 rounded px-2 py-1 overflow-x-auto">${item.cmd}</code>
+                <button class="copy-btn rounded border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50" data-cmd="${escapeHtml(item.cmd)}">Copy</button>
+              </div>
+            </div>
+          </label>
+        `;
+        ul.appendChild(li);
+      }
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    function renderTrialCards() {
+      const grid = document.getElementById('trial-cards');
+      grid.innerHTML = '';
+      for (const card of TRIAL_CARDS) {
+        const { done, total } = QRTrials.countDone(state, card.id);
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        const cardEl = document.createElement('a');
+        cardEl.href = card.href;
+        cardEl.className = `block bg-white rounded-lg shadow ring-1 ring-slate-200 hover:ring-slate-300 hover:shadow-md transition-all border-l-4 ${card.accent} p-4 group`;
+        cardEl.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-slate-500 tracking-wider">${card.label}</span>
+                <span class="progress-badge" data-state="${done === total && total > 0 ? 'done' : (done > 0 ? '' : 'empty')}">${done} / ${total}</span>
+              </div>
+              <h3 class="mt-1 text-sm font-semibold text-slate-900">${card.title}</h3>
+              <p class="mt-1 text-xs text-slate-600">${card.desc}</p>
+            </div>
+            <svg class="w-5 h-5 text-slate-300 group-hover:text-slate-500 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="mt-3 h-1 w-full rounded-full bg-slate-100 overflow-hidden">
+            <div class="h-full bg-blue-500" style="width:${pct}%"></div>
+          </div>
+        `;
+        grid.appendChild(cardEl);
+      }
+    }
+
+    function renderChecklistProgress() {
+      const preDone = PRE_ITEMS.filter(i => state.preChecklist[i.key]).length;
+      const postDone = POST_ITEMS.filter(i => state.postChecklist[i.key]).length;
+      const preBadge = document.getElementById('pre-progress');
+      const postBadge = document.getElementById('post-progress');
+      preBadge.textContent = `${preDone} / ${PRE_ITEMS.length}`;
+      preBadge.dataset.state = preDone === PRE_ITEMS.length ? 'done' : (preDone > 0 ? '' : 'empty');
+      postBadge.textContent = `${postDone} / ${POST_ITEMS.length}`;
+      postBadge.dataset.state = postDone === POST_ITEMS.length ? 'done' : (postDone > 0 ? '' : 'empty');
+    }
+
+    function renderProgress() {
+      const { done, total } = QRTrials.countAll(state);
+      document.getElementById('global-progress-text').textContent = `${done} / ${total} trials recorded`;
+      document.getElementById('global-progress-bar').style.width = `${total > 0 ? (done / total) * 100 : 0}%`;
+      renderTrialCards();
+      renderChecklistProgress();
+    }
+
+    // -------------------------------------------------------------------
+    // Wire-up
+    // -------------------------------------------------------------------
+    function init() {
+      renderChecklist('pre-checklist', PRE_ITEMS, 'preChecklist');
+      renderChecklist('post-checklist', POST_ITEMS, 'postChecklist');
+      renderProgress();
+
+      // Checkbox change handler (event delegation on body)
+      document.body.addEventListener('change', (e) => {
+        const t = e.target;
+        if (t.matches('input[type=checkbox][data-bucket]')) {
+          const bucket = t.dataset.bucket;
+          const key = t.dataset.key;
+          state[bucket][key] = t.checked;
+          persist();
+        }
+      });
+
+      // Copy buttons (any element with .copy-btn)
+      document.body.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.copy-btn');
+        if (!btn) return;
+        e.preventDefault();
+        const targetId = btn.dataset.target;
+        const text = targetId
+          ? document.getElementById(targetId).textContent
+          : btn.dataset.cmd || '';
+        await QRTrials.copyToClipboard(text);
+        QRTrials.flashCopied(btn);
+      });
+
+      // Reset all
+      document.getElementById('reset-all-btn').addEventListener('click', () => {
+        if (!confirm('Reset every trial, both checklists, and erase all recorded data? This cannot be undone.')) return;
+        state = QRTrials.resetAll();
+        renderChecklist('pre-checklist', PRE_ITEMS, 'preChecklist');
+        renderChecklist('post-checklist', POST_ITEMS, 'postChecklist');
+        renderProgress();
+      });
+
+      // Export all
+      document.getElementById('export-all-btn').addEventListener('click', () => {
+        QRTrials.downloadAll(state);
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>

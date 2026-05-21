@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>T5 — Simultaneous QR · QR Nav Trial Runner</title>
+  <script src="assets/tailwind.js"></script>
+  <link rel="stylesheet" href="assets/styles.css">
+  <script src="assets/shared.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm no-print">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+      <a href="index.html" class="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Dashboard
+      </a>
+      <div class="flex-1 min-w-0">
+        <h1 class="text-base sm:text-lg font-semibold tracking-tight">T5 · Simultaneous QR</h1>
+        <p class="text-xs text-slate-600">Two cards in frame · 10 reps · tests largest-bbox tie-break (C1 edge case)</p>
+      </div>
+      <span class="progress-badge"><span id="trial-progress-text">0 / 10</span></span>
+      <button id="download-csv-btn" class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+        Download t5_simultaneous.csv
+      </button>
+      <button id="reset-trial-btn" class="inline-flex items-center gap-1.5 rounded-md bg-white border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50">
+        Reset T5
+      </button>
+    </div>
+    <div class="max-w-7xl mx-auto px-4 pb-2">
+      <div class="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+        <div id="trial-progress-bar" class="h-full bg-blue-600 transition-all duration-200" style="width:0%"></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+    <section class="bg-white rounded-lg shadow ring-1 ring-slate-200 p-5">
+      <header class="mb-3">
+        <h2 class="text-sm font-semibold text-slate-900">Setup</h2>
+        <p class="text-xs text-slate-500">Drives Section V.2.3 — satisfies the C1 "edge case" rubric line.</p>
+      </header>
+      <dl class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div><dt class="text-xs text-slate-500">Cards</dt><dd class="font-medium">2 in frame</dd></div>
+        <div><dt class="text-xs text-slate-500">Distance offset</dt><dd class="font-medium">slight (closer + further)</dd></div>
+        <div><dt class="text-xs text-slate-500">Default pair</dt><dd class="font-medium">STOP closer · GO further</dd></div>
+        <div><dt class="text-xs text-slate-500">Reps</dt><dd class="font-medium">10</dd></div>
+      </dl>
+      <div class="mt-3">
+        <label class="block text-xs font-medium text-slate-600 mb-1">Launch command:</label>
+        <div class="flex items-center gap-2">
+          <code id="t5-launch" class="flex-1 block bg-slate-900 text-emerald-300 text-xs font-mono rounded px-3 py-2 overflow-x-auto">ros2 launch qr_nav qr_nav.launch.py session_id:=t5_simultaneous</code>
+          <button class="copy-btn rounded-md border border-slate-300 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50" data-target="t5-launch">Copy</button>
+        </div>
+      </div>
+      <div class="mt-3 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
+        Bonus: grab two screenshots from <code class="bg-white border border-emerald-200 rounded px-1">/qr_detections</code> showing both bounding boxes (one larger). Save under <code class="bg-white border border-emerald-200 rounded px-1">repo/results/screenshots/</code>.
+      </div>
+    </section>
+
+    <section class="bg-white rounded-lg shadow ring-1 ring-slate-200 overflow-hidden">
+      <header class="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-900">Reps</h2>
+        <p class="text-xs text-slate-500">Closer card should always be the one acted on. <code class="bg-slate-100 text-[11px] rounded px-1">Correct</code> = acted_on === closer.</p>
+      </header>
+      <div class="overflow-x-auto">
+        <table class="text-sm w-full">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">Rep</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">Closer card</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">Further card</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">Acted on</th>
+              <th class="px-3 py-2 text-center text-xs font-semibold text-slate-600">Correct?</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-600 min-w-[200px]">Notes</th>
+            </tr>
+          </thead>
+          <tbody id="t5-tbody" class="divide-y divide-slate-100"></tbody>
+          <tfoot class="bg-slate-50 border-t border-slate-200 text-xs">
+            <tr>
+              <th class="px-3 py-2 text-left font-semibold" colspan="4">Closer-card-won</th>
+              <td class="px-3 py-2 text-center font-mono" id="t5-summary">— / —</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+
+    <footer class="text-xs text-slate-500 pt-2 pb-8">
+      <a href="index.html" class="text-blue-600 hover:underline">← Back to dashboard</a>
+    </footer>
+  </main>
+
+  <script>
+    'use strict';
+
+    let state = QRTrials.load();
+    const CARDS = ['STOP', 'GO', 'TURN_LEFT', 'TURN_RIGHT', 'SPEED_UP', 'SPEED_DOWN', 'U_TURN'];
+
+    function persist() {
+      QRTrials.save(state);
+      document.dispatchEvent(new Event('trial-state-changed'));
+    }
+
+    function selectHtml(field, value) {
+      // acted_on starts blank so the row only counts toward progress
+      // once the operator records what the robot actually did.
+      const blankOpt = field === 'acted_on'
+        ? `<option value="" ${value === '' ? 'selected' : ''}>— pick —</option>`
+        : '';
+      const opts = CARDS.map(c =>
+        `<option value="${c}" ${c === value ? 'selected' : ''}>${c}</option>`
+      ).join('');
+      return `<select class="rounded border border-slate-200 px-2 py-1 text-xs focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200" data-field="${field}">${blankOpt}${opts}</select>`;
+    }
+
+    function correctChip(cell) {
+      if (!cell.acted_on) return `<span class="text-slate-400 text-xs">—</span>`;
+      if (cell.acted_on === cell.closer) {
+        return `<span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[11px] font-semibold">✓ correct</span>`;
+      }
+      return `<span class="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-[11px] font-semibold">✗ wrong</span>`;
+    }
+
+    function escapeAttr(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+
+    function renderBody() {
+      const tbody = document.getElementById('t5-tbody');
+      tbody.innerHTML = '';
+      state.t5.rows.forEach((cell, idx) => {
+        const tr = document.createElement('tr');
+        tr.dataset.idx = idx;
+        tr.innerHTML = `
+          <th class="px-3 py-2 text-left font-medium text-slate-800">${idx + 1}</th>
+          <td class="px-3 py-2">${selectHtml('closer', cell.closer)}</td>
+          <td class="px-3 py-2">${selectHtml('further', cell.further)}</td>
+          <td class="px-3 py-2">${selectHtml('acted_on', cell.acted_on)}</td>
+          <td class="px-3 py-2 text-center" data-correct>${correctChip(cell)}</td>
+          <td class="px-3 py-2">
+            <input type="text" class="w-full rounded border border-slate-200 px-2 py-1 text-xs focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+                   placeholder="anomalies, screenshots, etc."
+                   data-field="notes"
+                   value="${escapeAttr(cell.notes || '')}">
+          </td>`;
+        tbody.appendChild(tr);
+      });
+      refreshSummary();
+    }
+
+    function refreshRow(idx) {
+      const tr = document.querySelector(`tr[data-idx="${idx}"]`);
+      if (!tr) return;
+      tr.querySelector('[data-correct]').innerHTML = correctChip(state.t5.rows[idx]);
+    }
+
+    function refreshSummary() {
+      let won = 0, n = 0;
+      for (const cell of state.t5.rows) {
+        if (cell.acted_on) {
+          n++;
+          if (cell.acted_on === cell.closer) won++;
+        }
+      }
+      document.getElementById('t5-summary').textContent = `${won} / ${n}`;
+    }
+
+    function init() {
+      renderBody();
+
+      const tbody = document.getElementById('t5-tbody');
+      tbody.addEventListener('change', (e) => {
+        const sel = e.target.closest('select[data-field]');
+        if (!sel) return;
+        const idx = parseInt(sel.closest('tr').dataset.idx, 10);
+        state.t5.rows[idx][sel.dataset.field] = sel.value;
+        persist();
+        refreshRow(idx);
+        refreshSummary();
+      });
+      tbody.addEventListener('input', (e) => {
+        const inp = e.target.closest('input[data-field="notes"]');
+        if (!inp) return;
+        const idx = parseInt(inp.closest('tr').dataset.idx, 10);
+        state.t5.rows[idx].notes = inp.value;
+        persist();
+      });
+
+      QRTrials.installTrialChrome('t5', {
+        onReset: () => {
+          state = QRTrials.load();
+          renderBody();
+        },
+      });
+      document.addEventListener('trial-state-changed', () => {
+        const fresh = QRTrials.load();
+        const { done, total } = QRTrials.countDone(fresh, 't5');
+        document.getElementById('trial-progress-text').textContent = `${done} / ${total}`;
+        document.getElementById('trial-progress-bar').style.width = `${total > 0 ? (done / total) * 100 : 0}%`;
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>

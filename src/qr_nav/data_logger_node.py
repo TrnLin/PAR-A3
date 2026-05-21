@@ -29,14 +29,24 @@ class DataLoggerNode(Node):
         # Declare parameters
         self.declare_parameter('log_directory', '')
         self.declare_parameter('log_rate_hz', 5.0)
+        self.declare_parameter('session_id', '')
 
         # Read parameters
         self.log_directory = (
             self.get_parameter('log_directory').get_parameter_value().string_value
         )
         log_rate_hz = self.get_parameter('log_rate_hz').get_parameter_value().double_value
+        session_id = (
+            self.get_parameter('session_id').get_parameter_value().string_value.strip()
+        )
 
-        # Resolve CSV path. Three tiers, highest priority first:
+        # Resolve CSV path. Four tiers, highest priority first:
+        #   0. session_id param non-empty (e.g. session_id:=t1_per_command via
+        #      the launch arg) — CSV lands at <repo>/results/<session_id>_<TS>.csv.
+        #      This is the experiment-session workflow promised in
+        #      phases/phase-2-experiments.md: each trial set gets its own
+        #      named file under repo/results/, ready to commit and feed into
+        #      results/analyze.ipynb.
         #   1. $QR_NAV_RUN_DIR  — set by tools/qr_logging_env.sh; CSV lands in
         #      the same per-command subfolder as console.log (no timestamp
         #      suffix needed; the folder is already timestamped).
@@ -47,7 +57,16 @@ class DataLoggerNode(Node):
         #      --symlink-install since Path.resolve() follows the symlink
         #      back to source).
         run_dir = os.environ.get('QR_NAV_RUN_DIR', '').strip()
-        if run_dir:
+        # data_logger_node.py lives at repo/src/qr_nav/data_logger_node.py
+        # → parents[2] is the repo root.
+        repo_root = Path(__file__).resolve().parents[2]
+        if session_id:
+            self.log_directory = str(repo_root / 'results')
+            timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.csv_path = os.path.join(
+                self.log_directory, f'{session_id}_{timestamp_str}.csv'
+            )
+        elif run_dir:
             self.log_directory = run_dir
             self.csv_path = os.path.join(run_dir, 'qr_log.csv')
         elif self.log_directory:
@@ -56,9 +75,6 @@ class DataLoggerNode(Node):
                 self.log_directory, f'qr_log_{timestamp_str}.csv'
             )
         else:
-            # data_logger_node.py lives at repo/src/qr_nav/data_logger_node.py
-            # → parents[2] is the repo root.
-            repo_root = Path(__file__).resolve().parents[2]
             self.log_directory = str(repo_root / 'logs')
             timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
             self.csv_path = os.path.join(
@@ -116,9 +132,10 @@ class DataLoggerNode(Node):
         log_period = 1.0 / log_rate_hz
         self.log_timer = self.create_timer(log_period, self.log_tick)
 
+        session_tag = f'session_id={session_id} ' if session_id else ''
         self.get_logger().info(
-            f'Data Logger Node started — logging to {self.csv_path} '
-            f'at {log_rate_hz} Hz'
+            f'Data Logger Node started — {session_tag}'
+            f'logging to {self.csv_path} at {log_rate_hz} Hz'
         )
 
     def qr_command_callback(self, msg: String):
