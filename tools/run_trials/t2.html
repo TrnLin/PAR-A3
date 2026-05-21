@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>T2 — Distance sweep · QR Nav Trial Runner</title>
+  <script src="assets/tailwind.js"></script>
+  <link rel="stylesheet" href="assets/styles.css">
+  <script src="assets/shared.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm no-print">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+      <a href="index.html" class="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Dashboard
+      </a>
+      <div class="flex-1 min-w-0">
+        <h1 class="text-base sm:text-lg font-semibold tracking-tight">T2 · Distance sweep</h1>
+        <p class="text-xs text-slate-600">STOP card at 0.3 / 0.6 / 1.0 / 1.5 m · 0° · 10 reps each</p>
+      </div>
+      <span class="progress-badge"><span id="trial-progress-text">0 / 40</span></span>
+      <button id="download-csv-btn" class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+        Download t2_distance.csv
+      </button>
+      <button id="reset-trial-btn" class="inline-flex items-center gap-1.5 rounded-md bg-white border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50">
+        Reset T2
+      </button>
+    </div>
+    <div class="max-w-7xl mx-auto px-4 pb-2">
+      <div class="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+        <div id="trial-progress-bar" class="h-full bg-blue-600 transition-all duration-200" style="width:0%"></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+    <section class="bg-white rounded-lg shadow ring-1 ring-slate-200 p-5">
+      <header class="mb-3">
+        <h2 class="text-sm font-semibold text-slate-900">Setup</h2>
+        <p class="text-xs text-slate-500">Drives Figure F5a (accuracy vs distance) and Section V.2.2.</p>
+      </header>
+      <dl class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div><dt class="text-xs text-slate-500">Card</dt><dd class="font-medium">STOP only</dd></div>
+        <div><dt class="text-xs text-slate-500">Angle</dt><dd class="font-medium">0°</dd></div>
+        <div><dt class="text-xs text-slate-500">Robot</dt><dd class="font-medium">Stationary</dd></div>
+        <div><dt class="text-xs text-slate-500">Reps / distance</dt><dd class="font-medium">10</dd></div>
+      </dl>
+      <div class="mt-3">
+        <label class="block text-xs font-medium text-slate-600 mb-1">Launch command:</label>
+        <div class="flex items-center gap-2">
+          <code id="t2-launch" class="flex-1 block bg-slate-900 text-emerald-300 text-xs font-mono rounded px-3 py-2 overflow-x-auto">ros2 launch qr_nav qr_nav.launch.py session_id:=t2_distance</code>
+          <button class="copy-btn rounded-md border border-slate-300 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50" data-target="t2-launch">Copy</button>
+        </div>
+      </div>
+      <div class="mt-3 rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-900">
+        Read <code class="bg-white border border-blue-200 rounded px-1">bbox_area</code> from the data_logger CSV's <code class="bg-white border border-blue-200 rounded px-1">all_detections</code> JSON column post-hoc — paste into the bbox cells below to cross-validate the <code class="bg-white border border-blue-200 rounded px-1">min_bbox_area</code> baseline used in T6.
+      </div>
+    </section>
+
+    <section class="bg-white rounded-lg shadow ring-1 ring-slate-200 overflow-hidden">
+      <header class="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-900">Reps</h2>
+        <p class="text-xs text-slate-500">Click <kbd class="text-[10px] bg-slate-100 px-1 rounded">D</kbd> to toggle detection. Bbox px² inputs accept numbers from the data_logger CSV.</p>
+      </header>
+      <div class="overflow-x-auto">
+        <table class="rep-grid text-sm w-full">
+          <thead>
+            <tr id="t2-thead">
+              <th class="text-left px-3 py-2 text-xs font-semibold text-slate-600">Distance</th>
+              <!-- Filled by script -->
+            </tr>
+          </thead>
+          <tbody id="t2-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="text-xs text-slate-500 pt-2 pb-8">
+      <a href="index.html" class="text-blue-600 hover:underline">← Back to dashboard</a>
+    </footer>
+  </main>
+
+  <script>
+    'use strict';
+
+    let state = QRTrials.load();
+
+    function persist() {
+      QRTrials.save(state);
+      document.dispatchEvent(new Event('trial-state-changed'));
+    }
+
+    function renderHead() {
+      const tr = document.getElementById('t2-thead');
+      tr.innerHTML = `<th class="text-left px-3 py-2 text-xs font-semibold text-slate-600 sticky left-0 bg-slate-50 z-10">Distance</th>`;
+      for (let i = 1; i <= 10; i++) {
+        tr.insertAdjacentHTML('beforeend',
+          `<th class="text-center px-1 py-2 text-[11px] font-semibold text-slate-500">${i}</th>`);
+      }
+      tr.insertAdjacentHTML('beforeend',
+        `<th class="text-center px-3 py-2 text-xs font-semibold text-slate-600">Detection</th>`);
+      tr.insertAdjacentHTML('beforeend',
+        `<th class="text-center px-3 py-2 text-xs font-semibold text-slate-600">Mean bbox</th>`);
+    }
+
+    function renderBody() {
+      const tbody = document.getElementById('t2-tbody');
+      tbody.innerHTML = '';
+      for (const d of QRTrials.DISTANCES) {
+        const reps = state.t2.rows[d];
+        const tr = document.createElement('tr');
+        tr.dataset.distance = d;
+
+        let cellsHtml = '';
+        reps.forEach((cell, idx) => {
+          const dVal = cell.detected === null ? '' : cell.detected;
+          const bbox = cell.bbox_area !== null && cell.bbox_area !== undefined ? cell.bbox_area : '';
+          cellsHtml += `
+            <td class="text-center px-1 py-2">
+              <div class="inline-flex flex-col items-center gap-1" data-cell="${d}|${idx}">
+                <button class="toggle-cell tri-toggle" data-field="detected" data-value="${dVal}" title="Detected">D</button>
+                <input type="number" min="0" step="1"
+                       class="w-16 rounded border border-slate-200 px-1 py-0.5 text-[11px] font-mono text-center focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+                       placeholder="px²" data-field="bbox_area" value="${bbox}">
+              </div>
+            </td>`;
+        });
+
+        const t = tally(reps);
+        const tallyHtml = `
+          <td class="text-center px-3 py-2 text-xs whitespace-nowrap">
+            <span class="text-emerald-700 font-semibold">${t.detected}</span><span class="text-slate-400">/${t.total}</span>
+          </td>`;
+
+        const meanHtml = `
+          <td class="text-center px-3 py-2 text-xs font-mono whitespace-nowrap">
+            ${t.meanBbox === null ? '—' : Math.round(t.meanBbox).toLocaleString()}
+          </td>`;
+
+        tr.innerHTML = `
+          <th class="text-left px-3 py-2 font-medium text-slate-800">${d} m</th>
+          ${cellsHtml}
+          ${tallyHtml}
+          ${meanHtml}`;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function tally(reps) {
+      let detected = 0, total = 0;
+      let bboxSum = 0, bboxN = 0;
+      for (const cell of reps) {
+        if (cell.detected !== null) {
+          total++;
+          if (cell.detected === 1) detected++;
+        }
+        if (cell.bbox_area !== null && cell.bbox_area !== undefined && cell.bbox_area !== '') {
+          const v = Number(cell.bbox_area);
+          if (!Number.isNaN(v)) { bboxSum += v; bboxN++; }
+        }
+      }
+      return { detected, total, meanBbox: bboxN > 0 ? bboxSum / bboxN : null };
+    }
+
+    function refreshRow(d) {
+      const tr = document.querySelector(`tr[data-distance="${d}"]`);
+      if (!tr) return;
+      const reps = state.t2.rows[d];
+      tr.querySelectorAll('[data-cell]').forEach((wrap, idx) => {
+        const cell = reps[idx];
+        const btn = wrap.querySelector('[data-field="detected"]');
+        btn.dataset.value = cell.detected === null ? '' : cell.detected;
+      });
+      const t = tally(reps);
+      const tds = tr.querySelectorAll('td');
+      tds[10].innerHTML = `<span class="text-emerald-700 font-semibold">${t.detected}</span><span class="text-slate-400">/${t.total}</span>`;
+      tds[11].textContent = t.meanBbox === null ? '—' : Math.round(t.meanBbox).toLocaleString();
+    }
+
+    function nextValue(v) {
+      if (v === '' || v === null) return 1;
+      if (v === 1 || v === '1') return 0;
+      return null;
+    }
+
+    function init() {
+      renderHead();
+      renderBody();
+
+      const tbody = document.getElementById('t2-tbody');
+      tbody.addEventListener('click', (e) => {
+        const btn = e.target.closest('.tri-toggle');
+        if (!btn) return;
+        const wrap = btn.closest('[data-cell]');
+        const [d, idxStr] = wrap.dataset.cell.split('|');
+        const idx = parseInt(idxStr, 10);
+        const cur = btn.dataset.value === '' ? null : Number(btn.dataset.value);
+        state.t2.rows[d][idx].detected = nextValue(cur);
+        persist();
+        refreshRow(d);
+      });
+      tbody.addEventListener('input', (e) => {
+        const inp = e.target.closest('input[data-field="bbox_area"]');
+        if (!inp) return;
+        const wrap = inp.closest('[data-cell]');
+        const [d, idxStr] = wrap.dataset.cell.split('|');
+        const idx = parseInt(idxStr, 10);
+        const v = inp.value.trim();
+        state.t2.rows[d][idx].bbox_area = v === '' ? null : Number(v);
+        persist();
+        // refresh only the mean cell, no need to redraw toggles
+        const tr = document.querySelector(`tr[data-distance="${d}"]`);
+        const t = tally(state.t2.rows[d]);
+        tr.querySelectorAll('td')[11].textContent = t.meanBbox === null ? '—' : Math.round(t.meanBbox).toLocaleString();
+      });
+
+      QRTrials.installTrialChrome('t2', {
+        onReset: () => {
+          state = QRTrials.load();
+          renderBody();
+        },
+      });
+      document.addEventListener('trial-state-changed', () => {
+        const fresh = QRTrials.load();
+        const { done, total } = QRTrials.countDone(fresh, 't2');
+        document.getElementById('trial-progress-text').textContent = `${done} / ${total}`;
+        document.getElementById('trial-progress-bar').style.width = `${total > 0 ? (done / total) * 100 : 0}%`;
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>

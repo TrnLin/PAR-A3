@@ -1,0 +1,178 @@
+/* QR Nav — Trial Runner custom styles.
+ *
+ * Tailwind handles 95% of the look. This file holds only the things Tailwind
+ * cannot express well: print rules, accessible focus rings, and the
+ * sticky-header behaviour for the long rep grids.
+ */
+
+/* ----- focus ring ------------------------------------------------------- */
+:focus-visible {
+  outline: 2px solid #2563eb; /* tailwind blue-600 */
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ----- toggle cell tri-state (blank → ✓ → ✗) ---------------------------- */
+.toggle-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  border: 1px solid #d1d5db; /* gray-300 */
+  background: #ffffff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+}
+.toggle-cell:hover {
+  border-color: #9ca3af; /* gray-400 */
+}
+.toggle-cell[data-value="1"] {
+  background: #d1fae5; /* emerald-100 */
+  border-color: #059669; /* emerald-600 */
+  color: #065f46; /* emerald-800 */
+}
+.toggle-cell[data-value="0"] {
+  background: #fee2e2; /* red-100 */
+  border-color: #dc2626; /* red-600 */
+  color: #991b1b; /* red-800 */
+}
+
+/* ----- rep grid layout --------------------------------------------------- */
+.rep-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.rep-grid thead th {
+  background: #f9fafb; /* gray-50 */
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+/* Pin only the row-label column so it stays visible during horizontal
+   scrolling. Vertical thead stickiness was removed — it conflicted with
+   the page's sticky top bar (different heights, z-index, and conflicting
+   `top` offsets across pages) and made the header appear in the middle
+   of the data rows. The tables are short enough to read end-to-end without
+   pinning the column header. */
+.rep-grid tbody th {
+  position: sticky;
+  left: 0;
+  background: #ffffff;
+  z-index: 1;
+  box-shadow: inset -1px 0 0 #e5e7eb;
+}
+.rep-grid td,
+.rep-grid th {
+  padding: 0.35rem 0.4rem;
+  vertical-align: middle;
+}
+.rep-grid tbody tr:hover td {
+  background: #f8fafc; /* slate-50 */
+}
+.rep-grid tbody tr:hover th {
+  background: #f8fafc;
+}
+
+/* ----- progress badges --------------------------------------------------- */
+.progress-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  background: #eef2ff; /* indigo-50 */
+  color: #3730a3; /* indigo-800 */
+}
+.progress-badge[data-state="done"] {
+  background: #d1fae5;
+  color: #065f46;
+}
+.progress-badge[data-state="empty"] {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+/* ----- print rules — A4 portrait paper backup --------------------------- */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+  body {
+    background: #ffffff !important;
+  }
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+  .rep-grid thead th,
+  .rep-grid tbody th {
+    position: static;
+    box-shadow: none;
+  }
+  .toggle-cell {
+    border-color: #000000;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .toggle-cell[data-value="1"]::after {
+    content: "✓";
+  }
+  .toggle-cell[data-value="0"]::after {
+    content: "✗";
+  }
+  .toggle-cell[data-value="1"],
+  .toggle-cell[data-value="0"] {
+    color: #000000 !important;
+  }
+  .progress-badge {
+    background: transparent !important;
+    color: #000000 !important;
+    border: 1px solid #000000;
+  }
+  details {
+    page-break-inside: avoid;
+  }
+  /* expand all <details> in print: force the children visible regardless of
+     the open attribute, so the gotchas section prints fully without
+     manually expanding it first. */
+  details > *:not(summary) {
+    display: block !important;
+  }
+  details > summary {
+    list-style: none;
+  }
+  details > summary svg {
+    display: none;
+  }
+
+  /* Trial-page header chrome: keep the title visible at the top of every
+     printed page, but drop the back-link / action buttons (already marked
+     no-print on each page). */
+  header.sticky {
+    position: static;
+    box-shadow: none;
+    border: none;
+  }
+
+  /* Tighter typography for paper density. */
+  body {
+    font-size: 11pt;
+    color: #000;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tbody tr {
+    page-break-inside: avoid;
+  }
+}

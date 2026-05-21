@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>T6 — min_bbox_area ablation · QR Nav Trial Runner</title>
+  <script src="assets/tailwind.js"></script>
+  <link rel="stylesheet" href="assets/styles.css">
+  <script src="assets/shared.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm no-print">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+      <a href="index.html" class="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Dashboard
+      </a>
+      <div class="flex-1 min-w-0">
+        <h1 class="text-base sm:text-lg font-semibold tracking-tight">T6 · Ablation — <code class="text-sm">min_bbox_area</code></h1>
+        <p class="text-xs text-slate-600">Option A · 1.5 m STOP card + small distant secondary · 2 configs × 15 reps</p>
+      </div>
+      <span class="progress-badge"><span id="trial-progress-text">0 / 30</span></span>
+      <button id="download-csv-btn" class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+        Download t6_ablation.csv
+      </button>
+      <button id="reset-trial-btn" class="inline-flex items-center gap-1.5 rounded-md bg-white border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50">
+        Reset T6
+      </button>
+    </div>
+    <div class="max-w-7xl mx-auto px-4 pb-2">
+      <div class="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+        <div id="trial-progress-bar" class="h-full bg-blue-600 transition-all duration-200" style="width:0%"></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+    <section class="bg-white rounded-lg shadow ring-1 ring-slate-200 p-5">
+      <header class="mb-3">
+        <h2 class="text-sm font-semibold text-slate-900">Setup</h2>
+        <p class="text-xs text-slate-500">Drives Figure F6 and Section V.2.4 — the highest-leverage prose in the entire results section (C4 + C2).</p>
+      </header>
+      <dl class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div><dt class="text-xs text-slate-500">Primary card</dt><dd class="font-medium">STOP @ 1.5 m</dd></div>
+        <div><dt class="text-xs text-slate-500">Secondary card</dt><dd class="font-medium">Small / distant</dd></div>
+        <div><dt class="text-xs text-slate-500">Reps / config</dt><dd class="font-medium">15</dd></div>
+        <div><dt class="text-xs text-slate-500">Metric</dt><dd class="font-medium">TP and FP per rep</dd></div>
+      </dl>
+
+      <div class="mt-4 rounded-md bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-900">
+        <strong>Rebuild + relaunch the detector after editing <code class="bg-white border border-rose-200 rounded px-1">min_bbox_area</code> in <code class="bg-white border border-rose-200 rounded px-1">qr_params.yaml</code> before starting the second config.</strong> Otherwise the parameter change does not take effect.
+      </div>
+
+      <div class="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Launch baseline (<code class="text-[11px]">min_bbox_area = 1500</code>):</label>
+          <div class="flex items-center gap-2">
+            <code id="t6-launch-baseline" class="flex-1 block bg-slate-900 text-emerald-300 text-xs font-mono rounded px-3 py-2 overflow-x-auto">ros2 launch qr_nav qr_nav.launch.py session_id:=t6_baseline</code>
+            <button class="copy-btn rounded-md border border-slate-300 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50" data-target="t6-launch-baseline">Copy</button>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Launch filter-off (<code class="text-[11px]">min_bbox_area = 0</code>):</label>
+          <div class="flex items-center gap-2">
+            <code id="t6-launch-off" class="flex-1 block bg-slate-900 text-emerald-300 text-xs font-mono rounded px-3 py-2 overflow-x-auto">ros2 launch qr_nav qr_nav.launch.py session_id:=t6_filter_off</code>
+            <button class="copy-btn rounded-md border border-slate-300 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50" data-target="t6-launch-off">Copy</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Two grids, one per configuration -->
+    <div id="t6-grids" class="space-y-6"></div>
+
+    <section class="bg-white rounded-lg shadow ring-1 ring-slate-200 p-5">
+      <h2 class="text-sm font-semibold text-slate-900 mb-3">Configuration summary</h2>
+      <table class="text-sm w-full">
+        <thead class="text-left text-xs text-slate-600 border-b border-slate-200">
+          <tr>
+            <th class="py-2">Configuration</th>
+            <th class="py-2 text-center">True positives</th>
+            <th class="py-2 text-center">False positives</th>
+          </tr>
+        </thead>
+        <tbody id="t6-summary" class="divide-y divide-slate-100"></tbody>
+      </table>
+    </section>
+
+    <footer class="text-xs text-slate-500 pt-2 pb-8">
+      <a href="index.html" class="text-blue-600 hover:underline">← Back to dashboard</a>
+    </footer>
+  </main>
+
+  <script>
+    'use strict';
+
+    let state = QRTrials.load();
+    const CONFIGS = [
+      { key: 'baseline',   label: 'Baseline (min_bbox_area = 1500)', accent: 'border-l-emerald-500' },
+      { key: 'filter_off', label: 'Filter off (min_bbox_area = 0)',  accent: 'border-l-rose-500' },
+    ];
+
+    function persist() {
+      QRTrials.save(state);
+      document.dispatchEvent(new Event('trial-state-changed'));
+    }
+
+    function nextValue(v) {
+      if (v === '' || v === null) return 1;
+      if (v === 1 || v === '1') return 0;
+      return null;
+    }
+
+    function tally(reps) {
+      let tp = 0, fp = 0, n = 0;
+      for (const cell of reps) {
+        let touched = false;
+        if (cell.tp !== null) { touched = true; if (cell.tp === 1) tp++; }
+        if (cell.fp !== null) { touched = true; if (cell.fp === 1) fp++; }
+        if (touched) n++;
+      }
+      return { tp, fp, n };
+    }
+
+    function renderGrids() {
+      const wrap = document.getElementById('t6-grids');
+      wrap.innerHTML = '';
+      for (const cfg of CONFIGS) {
+        const reps = state.t6.rows[cfg.key];
+        const sec = document.createElement('section');
+        sec.className = `bg-white rounded-lg shadow ring-1 ring-slate-200 overflow-hidden border-l-4 ${cfg.accent}`;
+        sec.dataset.config = cfg.key;
+
+        let cellsHtml = '';
+        reps.forEach((cell, idx) => {
+          const tpVal = cell.tp === null ? '' : cell.tp;
+          const fpVal = cell.fp === null ? '' : cell.fp;
+          cellsHtml += `
+            <td class="text-center px-1 py-2 border-r border-slate-100 last:border-r-0">
+              <div class="inline-flex flex-col items-center gap-1" data-cell="${cfg.key}|${idx}">
+                <button class="toggle-cell tri-toggle" data-field="tp" data-value="${tpVal}" title="True positive">TP</button>
+                <button class="toggle-cell tri-toggle" data-field="fp" data-value="${fpVal}" title="False positive">FP</button>
+              </div>
+            </td>`;
+        });
+
+        const t = tally(reps);
+
+        sec.innerHTML = `
+          <header class="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+            <div>
+              <h2 class="text-sm font-semibold text-slate-900">${cfg.label}</h2>
+              <p class="text-xs text-slate-500">15 reps. <code class="bg-slate-100 text-[11px] rounded px-1">TP</code> = robot acted on the primary STOP card. <code class="bg-slate-100 text-[11px] rounded px-1">FP</code> = robot fired any command without a primary card.</p>
+            </div>
+            <span class="progress-badge" data-state="${t.n === 15 ? 'done' : (t.n > 0 ? '' : 'empty')}">${t.n} / 15</span>
+          </header>
+          <div class="overflow-x-auto">
+            <table class="rep-grid text-sm w-full">
+              <thead>
+                <tr>
+                  <th class="text-left px-3 py-2 text-xs font-semibold text-slate-600">Rep</th>
+                  ${Array.from({ length: 15 }, (_, i) =>
+                    `<th class="text-center px-1 py-2 text-[11px] font-semibold text-slate-500">${i + 1}</th>`).join('')}
+                  <th class="text-center px-3 py-2 text-xs font-semibold text-slate-600">Tally</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th class="text-left px-3 py-2 font-medium text-slate-800">${cfg.key}</th>
+                  ${cellsHtml}
+                  <td class="text-center px-3 py-2 text-xs whitespace-nowrap" data-tally>
+                    <div><span class="text-emerald-700 font-semibold">TP ${t.tp}</span></div>
+                    <div><span class="text-rose-700 font-semibold">FP ${t.fp}</span></div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>`;
+        wrap.appendChild(sec);
+      }
+      renderSummary();
+    }
+
+    function refreshConfig(cfgKey) {
+      const sec = document.querySelector(`section[data-config="${cfgKey}"]`);
+      if (!sec) return;
+      const reps = state.t6.rows[cfgKey];
+      sec.querySelectorAll('[data-cell]').forEach((wrap, idx) => {
+        const cell = reps[idx];
+        const tpBtn = wrap.querySelector('[data-field="tp"]');
+        const fpBtn = wrap.querySelector('[data-field="fp"]');
+        tpBtn.dataset.value = cell.tp === null ? '' : cell.tp;
+        fpBtn.dataset.value = cell.fp === null ? '' : cell.fp;
+      });
+      const t = tally(reps);
+      sec.querySelector('[data-tally]').innerHTML = `
+        <div><span class="text-emerald-700 font-semibold">TP ${t.tp}</span></div>
+        <div><span class="text-rose-700 font-semibold">FP ${t.fp}</span></div>`;
+      const headerBadge = sec.querySelector('header .progress-badge');
+      headerBadge.textContent = `${t.n} / 15`;
+      headerBadge.dataset.state = t.n === 15 ? 'done' : (t.n > 0 ? '' : 'empty');
+      renderSummary();
+    }
+
+    function renderSummary() {
+      const tbody = document.getElementById('t6-summary');
+      tbody.innerHTML = '';
+      for (const cfg of CONFIGS) {
+        const t = tally(state.t6.rows[cfg.key]);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <th class="py-2 text-left font-medium text-slate-800"><code class="text-xs">${cfg.label}</code></th>
+          <td class="py-2 text-center font-mono text-emerald-700">${t.tp} / 15</td>
+          <td class="py-2 text-center font-mono text-rose-700">${t.fp} / 15</td>`;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function init() {
+      renderGrids();
+
+      document.getElementById('t6-grids').addEventListener('click', (e) => {
+        const btn = e.target.closest('.tri-toggle');
+        if (!btn) return;
+        const wrap = btn.closest('[data-cell]');
+        const [cfg, idxStr] = wrap.dataset.cell.split('|');
+        const idx = parseInt(idxStr, 10);
+        const field = btn.dataset.field;
+        const cur = btn.dataset.value === '' ? null : Number(btn.dataset.value);
+        state.t6.rows[cfg][idx][field] = nextValue(cur);
+        persist();
+        refreshConfig(cfg);
+      });
+
+      QRTrials.installTrialChrome('t6', {
+        onReset: () => {
+          state = QRTrials.load();
+          renderGrids();
+        },
+      });
+      document.addEventListener('trial-state-changed', () => {
+        const fresh = QRTrials.load();
+        const { done, total } = QRTrials.countDone(fresh, 't6');
+        document.getElementById('trial-progress-text').textContent = `${done} / ${total}`;
+        document.getElementById('trial-progress-bar').style.width = `${total > 0 ? (done / total) * 100 : 0}%`;
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>
