@@ -124,7 +124,7 @@ class CommandInterpreterNode(Node):
                 )
             else:
                 self.get_logger().info(
-                    f'Ignoring command {command} — currently STOPPED (only GO accepted)'
+                    f'Ignoring command {command} — currently {self.state} (only GO accepted)'
                 )
             return
 
