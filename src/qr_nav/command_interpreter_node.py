@@ -4,9 +4,9 @@ Receives validated QR commands and translates them into velocity commands
 for the ROSbot 3 PRO using an FSM with IDLE, DRIVING, TURNING, STOPPED,
 and RECOVERING states.
 
-The FSM boots into IDLE (zero velocity) and stays there until the first
-valid QR command arrives — so the robot never moves on launch alone. IDLE
-accepts any command; STOPPED still accepts only GO (operator-driven halt).
+The FSM boots into IDLE (zero velocity) and stays there until a GO
+command arrives — so the robot never moves on launch alone. Both IDLE
+and STOPPED states require a GO command to resume operation.
 """
 
 import time
@@ -114,8 +114,8 @@ class CommandInterpreterNode(Node):
             )
             return
 
-        # STOPPED state: only accept GO
-        if self.state == State.STOPPED:
+        # IDLE and STOPPED states: only accept GO
+        if self.state == (State.IDLE, State.STOPPED):
             if command == 'GO':
                 self._transition_to(State.DRIVING)
                 self.get_logger().info(
@@ -128,8 +128,7 @@ class CommandInterpreterNode(Node):
                 )
             return
 
-        # IDLE, DRIVING, RECOVERING all accept any command: fall through.
-        # (STOPPED was already handled above; TURNING ignores commands.)
+        # DRIVING, RECOVERING all accept any command: fall through.
         self._execute_command(command)
 
     def _execute_command(self, command: str):

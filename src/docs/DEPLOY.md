@@ -184,7 +184,7 @@ Walk through this script with the cards. Every message has a `header` block (`st
 | `SPEED_UP`                 | `0.13, 0.0`                                      | `DRIVING`                       |
 | `SPEED_DOWN`               | back to `0.08, 0.0`                              | `DRIVING`                       |
 
-If you show a turn card or `SPEED_UP`/`SPEED_DOWN` as the *first* card out of `IDLE`, the FSM executes the command and ends in `DRIVING` — `IDLE` only protects against motion until the operator deliberately arms the bot.
+If you show a turn card or `SPEED_UP`/`SPEED_DOWN` as the *first* card out of `IDLE`, the FSM ignores it. `IDLE` acts as a strict safety lock and requires a `GO` card to deliberately arm the robot into `DRIVING`.
 
 If any line in the table fails, fix it before letting wheels move.
 

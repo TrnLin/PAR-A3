@@ -941,9 +941,9 @@ self.last_command_time[best_command] = now
       </tr></thead>
       <tbody>
         <tr><td><code>IDLE</code></td>
-          <td><code>0.0, 0.0</code></td>
-          <td>Any valid command</td>
-          <td>First command received (no auto-exit — boot-safe)</td></tr>
+            <td><code>0.0, 0.0</code></td>
+            <td><em>Only <code>GO</code></em></td>
+            <td><code>GO</code> command → <code>DRIVING</code></td></tr>
         <tr><td><code>DRIVING</code></td>
           <td><code>cruise_speed, 0.0</code></td>
           <td>Any valid command</td>
@@ -1038,17 +1038,13 @@ self.last_command_time[best_command] = now
 
         <!-- IDLE -> DRIVING -->
         <path class="edge-good" d="M190,225 L375,225" marker-end="url(#arrA)"/>
-        <text class="edge-lbl edge-lbl-good" x="282" y="217">first command (e.g. GO)</text>
+        <text class="edge-lbl edge-lbl-good" x="282" y="217">GO (only)</text>
 
         <!-- DRIVING <-> TURNING -->
         <path class="edge" d="M510,200 C600,150 660,110 715,95" marker-end="url(#arr)"/>
         <text class="edge-lbl" x="608" y="142">TURN_LEFT/RIGHT/U_TURN</text>
         <path class="edge" d="M735,120 C685,170 600,200 525,215" marker-end="url(#arr)"/>
         <text class="edge-lbl" x="608" y="180">turn_duration elapsed</text>
-
-        <!-- IDLE -> TURNING (less common but legal) -->
-        <path class="edge" d="M180,205 C400,40 550,40 720,70" marker-end="url(#arr)"/>
-        <text class="edge-lbl" x="450" y="40">IDLE → turn → ends in DRIVING</text>
 
         <!-- DRIVING <-> STOPPED -->
         <path class="edge" d="M525,215 L710,215" marker-end="url(#arr)"/>
@@ -1081,7 +1077,7 @@ self.last_command_time[best_command] = now
     <p>
       The FSM boots into <code>IDLE</code>, not <code>DRIVING</code>. This is
       deliberate: launching the stack <em>never</em> moves the robot on its own.
-      A human shows the first card to deliberately arm the bot. Once armed,
+      A human must show a <code>GO</code> card to deliberately arm the bot. Once armed,
       <code>IDLE</code> is unreachable — the FSM only ever cycles between
       <code>DRIVING</code>, <code>TURNING</code>, <code>STOPPED</code>, and
       <code>RECOVERING</code>.
@@ -1173,7 +1169,7 @@ turn_180_duration = π   / turn_speed   ≈ 3.1416 / 0.4 ≈ 7.85 s  → rounded
         <tr><td><code>GO</code></td><td><code>(cruise, 0)</code></td><td>continuous</td><td>Arms from <code>IDLE</code>, releases from <code>STOPPED</code>.</td></tr>
         <tr><td><code>STOP</code></td><td><code>(0, 0)</code></td><td>continuous</td><td>Only <code>GO</code> can release.</td></tr>
         <tr><td><code>TURN_LEFT</code></td><td><code>(0, +turn_speed)</code></td><td>4.0 s</td><td>Then auto-resumes <code>DRIVING</code>.</td></tr>
-        <tr><td><code>TURN_RIGHT</code></td><td><code>(0, –turn_speed)</code></td><td>4.0 s</td><td>"</td></tr>
+        <tr><td><code>TURN_RIGHT</code></td><td><code>(0, –turn_speed)</code></td><td>4.0 s</td><td>Then auto-resumes <code>DRIVING</code></td></tr>
         <tr><td><code>U_TURN</code></td><td><code>(0, +turn_speed)</code></td><td>8.0 s</td><td>Same direction as TURN_LEFT, twice as long.</td></tr>
         <tr><td><code>SPEED_UP</code></td><td><code>(cruise+0.05, 0)</code></td><td>continuous</td><td>Capped at <code>max_speed=0.4</code>.</td></tr>
         <tr><td><code>SPEED_DOWN</code></td><td><code>(cruise–0.05, 0)</code></td><td>continuous</td><td>Floored at <code>min_speed=0.05</code>.</td></tr>

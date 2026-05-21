@@ -87,19 +87,21 @@ A Finite State Machine ensures reliable transitions between behaviors and preven
 
 | QR Code Content | Robot Behaviour | FSM Transition |
 |-----------------|-----------------|----------------|
-| `TURN_LEFT` | 90° left turn | `IDLE`\|`DRIVING` -> `TURNING` -> `DRIVING` |
-| `TURN_RIGHT` | 90° right turn | `IDLE`\|`DRIVING` -> `TURNING` -> `DRIVING` |
-| `U_TURN` | 180° turn | `IDLE`\|`DRIVING` -> `TURNING` -> `DRIVING` |
+| `TURN_LEFT` | 90° left turn | `DRIVING` -> `TURNING` -> `DRIVING` |
+| `TURN_RIGHT` | 90° right turn | `DRIVING` -> `TURNING` -> `DRIVING` |
+| `U_TURN` | 180° turn | `DRIVING` -> `TURNING` -> `DRIVING` |
 | `STOP` | Halt, wait for GO | any -> `STOPPED` |
 | `GO` | Resume driving | `IDLE`\|`STOPPED` -> `DRIVING` |
-| `SPEED_UP` | +0.05 m/s (max 0.4) | `IDLE`\|`DRIVING` -> `DRIVING` |
-| `SPEED_DOWN` | -0.05 m/s (min 0.05) | `IDLE`\|`DRIVING` -> `DRIVING` |
+| `SPEED_UP` | +0.05 m/s (max 0.4) | `DRIVING` -> `DRIVING` |
+| `SPEED_DOWN` | -0.05 m/s (min 0.05) | `DRIVING` -> `DRIVING` |
 
 ### FSM Behaviours
 
+The FSM boots into `IDLE` (stationary) so the robot never moves on launch alone - a `GO` command is strictly required to arm it.
+
 | State | Behaviour | Exit Condition |
 |-------|-----------|----------------|
-| `IDLE` | Zero velocity on boot, never auto-moves | Any valid QR command |
+| `IDLE` | Zero velocity on boot, strictly locked | `GO` command received |
 |`DRIVING`|Forward at `cruise_speed`| QR command or `recovery_timeout` |
 | `TURNING` | Timed rotation, ignores commands | Turn duration elapsed |
 | `STOPPED` | Zero velocity (operator halt) | `GO` command received |
