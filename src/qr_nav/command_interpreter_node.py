@@ -263,8 +263,16 @@ class CommandInterpreterNode(Node):
             self._publish_velocity(0.0, 0.0)
 
         elif self.state == State.RECOVERING:
-            # Slow down to minimum speed
-            self._publish_velocity(self.min_speed, 0.0)
+            # Vision-dropout creep used to force min_speed here, but that made
+            # SPEED_UP non-sticky: the operator would show SPEED_UP, withdraw
+            # the card, and ~recovery_timeout seconds later the robot would
+            # decay to min_speed even though nothing had asked it to slow down.
+            # Hold the operator-set cruise_speed instead — only SPEED_DOWN or
+            # STOP cards change forward speed now. RECOVERING is still entered
+            # (and published on /nav_state) for diagnostics: it signals "no QR
+            # commands seen for recovery_timeout seconds", just no longer
+            # overrides the velocity.
+            self._publish_velocity(self.cruise_speed, 0.0)
 
 
 def main(args=None):

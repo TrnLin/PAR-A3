@@ -11,7 +11,7 @@ qr_detector:
     rgb_image_topic: "/oak/rgb/image_raw"
 
     # --- Detection ---
-    detection_rate_hz: 15.0 # Hz — frame processing rate
+    detection_rate_hz: 5.0 # Hz — frame processing rate
     min_bbox_area: 500 # pixels — ignore tiny QR detections
     command_cooldown: 1.0 # seconds — debounce same command
 
