@@ -1,0 +1,2 @@
+metric,trials_total,trials_pass,pass_rate,pairs_tested,bbox_margin_min,bbox_margin_mean,bbox_margin_max
+closer-card-wins,10,10,1.0,1,20148.335028965957,23226.41817130451,29131.707931518555
