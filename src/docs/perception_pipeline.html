@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>qr_nav — Perception Pipeline</title>
+<style>
+  /* ---------- Design tokens (matched to qr_nav_explained.html) ---------- */
+  :root {
+    --bg:            #0b0d10;
+    --bg-elev:       #14171c;
+    --bg-elev-2:     #1a1e25;
+    --line:          #232934;
+    --line-soft:     #1c2129;
+    --ink:           #e8ecf2;
+    --ink-dim:       #aab2bf;
+    --ink-mute:      #6f7889;
+    --accent:        #76b900;
+    --accent-soft:   rgba(118,185,0,0.14);
+    --accent-line:   rgba(118,185,0,0.35);
+    --blue:          #4ea3ff;
+    --blue-soft:     rgba(78,163,255,0.14);
+    --amber:         #ffb84d;
+    --amber-soft:    rgba(255,184,77,0.14);
+    --red:           #ff6b6b;
+    --red-soft:      rgba(255,107,107,0.14);
+    --violet:        #b48cff;
+    --violet-soft:   rgba(180,140,255,0.14);
+    --mono:          ui-monospace, "JetBrains Mono", "SF Mono", Menlo,
+                     Consolas, "Liberation Mono", monospace;
+    --sans:          -apple-system, BlinkMacSystemFont, "Segoe UI", Inter,
+                     Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15.5px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  code { font-family: var(--mono); font-size: 0.9em; }
+
+  /* ---------- Page frame ---------- */
+  .wrap {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 32px;
+  }
+  .hero {
+    padding: 80px 0 40px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 48px;
+  }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    padding: 6px 12px;
+    border-radius: 999px;
+    margin-bottom: 24px;
+  }
+  .hero h1 {
+    font-size: clamp(34px, 5vw, 56px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin: 0 0 16px;
+    font-weight: 700;
+  }
+  .hero h1 .accent { color: var(--accent); }
+  .hero .lede {
+    font-size: clamp(16px, 1.4vw, 19px);
+    color: var(--ink-dim);
+    max-width: 800px;
+    margin: 0 0 28px;
+  }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-dim);
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 11px;
+  }
+  .chip .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+  }
+
+  /* ---------- Pipeline diagram ---------- */
+  .pipeline {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 8px 0 64px;
+  }
+
+  .stage {
+    width: 100%;
+    max-width: 820px;
+    background: linear-gradient(180deg, var(--bg-elev) 0%, var(--bg-elev-2) 100%);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px 26px;
+    position: relative;
+  }
+  .stage + .arrow { margin: 6px 0; }
+  .stage.kind-input    { border-left: 3px solid var(--blue);   }
+  .stage.kind-process  { border-left: 3px solid var(--accent); }
+  .stage.kind-fallback { border-left: 3px solid var(--amber); border-style: dashed; }
+  .stage.kind-gate     { border-left: 3px solid var(--violet); }
+  .stage.kind-publish  { border-left: 3px solid var(--accent); background: linear-gradient(180deg, #11160d 0%, #0e1208 100%); }
+
+  .stage-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .stage-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-mute);
+    letter-spacing: 0.15em;
+  }
+  .stage-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0;
+  }
+  .tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+  }
+  .tag.blue   { color: var(--blue);   background: var(--blue-soft);   border-color: rgba(78,163,255,0.3); }
+  .tag.green  { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-line); }
+  .tag.amber  { color: var(--amber);  background: var(--amber-soft);  border-color: rgba(255,184,77,0.3); }
+  .tag.violet { color: var(--violet); background: var(--violet-soft); border-color: rgba(180,140,255,0.3); }
+  .tag.red    { color: var(--red);    background: var(--red-soft);    border-color: rgba(255,107,107,0.3); }
+
+  .stage-body {
+    color: var(--ink-dim);
+    font-size: 14px;
+  }
+  .stage-body p { margin: 0 0 10px; }
+  .stage-body p:last-child { margin-bottom: 0; }
+
+  .snippet {
+    margin: 12px 0 0;
+    background: #0a0c10;
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: #cfd6e2;
+  }
+  .snippet .kw { color: #ff9bd6; }
+  .snippet .fn { color: #4ea3ff; }
+  .snippet .str { color: #b8e986; }
+  .snippet .num { color: #ffb84d; }
+  .snippet .cm { color: var(--ink-mute); font-style: italic; }
+
+  .kv {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 14px;
+    margin-top: 12px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+  }
+  .kv .k { color: var(--ink-mute); }
+  .kv .v { color: var(--ink); }
+  .kv .v .accent { color: var(--accent); }
+
+  /* ---------- Arrows between stages ---------- */
+  .arrow {
+    width: 2px;
+    height: 36px;
+    background: var(--line);
+    position: relative;
+  }
+  .arrow::after {
+    content: "";
+    position: absolute;
+    bottom: -1px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 8px; height: 8px;
+    border-right: 2px solid var(--line);
+    border-bottom: 2px solid var(--line);
+  }
+  .arrow.label {
+    height: 56px;
+  }
+  .arrow .lbl {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-mute);
+    white-space: nowrap;
+    background: var(--bg);
+    padding: 2px 8px;
+    border: 1px solid var(--line-soft);
+    border-radius: 4px;
+  }
+
+  /* ---------- Branch (fallback) ---------- */
+  .branch {
+    width: 100%;
+    max-width: 820px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: stretch;
+  }
+  .branch .stage { max-width: none; }
+
+  .branch-merge {
+    width: 100%;
+    max-width: 820px;
+    display: flex;
+    justify-content: center;
+    position: relative;
+    height: 36px;
+  }
+  .branch-merge::before,
+  .branch-merge::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    width: 50%;
+    height: 18px;
+    border-bottom: 2px solid var(--line);
+  }
+  .branch-merge::before { left: 0;  border-right: 2px solid var(--line); border-bottom-right-radius: 12px; }
+  .branch-merge::after  { right: 0; border-left:  2px solid var(--line); border-bottom-left-radius: 12px; }
+  .branch-merge .down {
+    position: absolute;
+    bottom: -1px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 8px; height: 8px;
+    border-right: 2px solid var(--line);
+    border-bottom: 2px solid var(--line);
+  }
+
+  /* ---------- Output fan-out ---------- */
+  .outputs {
+    width: 100%;
+    max-width: 820px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 18px;
+  }
+  .outputs .stage { max-width: none; }
+
+  /* ---------- Footer ---------- */
+  .footer {
+    border-top: 1px solid var(--line);
+    padding: 28px 0 56px;
+    color: var(--ink-mute);
+    font-size: 13px;
+    font-family: var(--mono);
+  }
+  .footer a { color: var(--accent); text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 720px) {
+    .branch, .outputs { grid-template-columns: 1fr; }
+    .wrap { padding: 0 20px; }
+    .hero { padding: 56px 0 32px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- ============================== HERO ============================== -->
+  <header class="hero">
+    <span class="eyebrow"><span class="dot" style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></span> perception</span>
+    <h1>From <span class="accent">RGB frame</span> to <span class="accent">/qr_command</span></h1>
+    <p class="lede">
+      The perception pipeline implemented by
+      <code>qr_detector_node.py</code> &mdash; a single ROS&nbsp;2 callback that
+      turns an OAK-D Pro RGB frame into at most one validated, debounced QR
+      command per cycle. Includes a CLAHE&nbsp;&rarr;&nbsp;adaptive-threshold
+      fallback, a spatial filter (largest bbox wins), and a per-command
+      cooldown.
+    </p>
+    <div class="meta">
+      <span class="chip"><span class="dot"></span>ROS 2 Jazzy</span>
+      <span class="chip"><span class="dot"></span>OpenCV 4.6</span>
+      <span class="chip"><span class="dot"></span>OAK-D Pro RGB</span>
+      <span class="chip"><span class="dot"></span>detection_rate_hz = 5.0</span>
+      <span class="chip"><span class="dot"></span>min_bbox_area = 500 px²</span>
+      <span class="chip"><span class="dot"></span>cooldown_sec = 1.0</span>
+    </div>
+  </header>
+
+  <!-- ============================ PIPELINE ============================ -->
+  <section class="pipeline">
+
+    <!-- 1. Source -->
+    <div class="stage kind-input">
+      <div class="stage-head">
+        <span class="stage-num">01 · SOURCE</span>
+        <h3 class="stage-title">OAK-D Pro RGB camera</h3>
+        <span class="tag blue">sensor_msgs/Image</span>
+      </div>
+      <div class="stage-body">
+        <p>Husarion's OAK-D ROS driver publishes raw RGB frames. QoS must
+          be <strong>RELIABLE / VOLATILE</strong> &mdash; a BEST_EFFORT
+          subscriber against a RELIABLE publisher silently receives zero
+          callbacks.</p>
+        <div class="kv">
+          <span class="k">topic</span><span class="v"><code>/oak/rgb/image_raw</code></span>
+          <span class="k">encoding</span><span class="v"><code>bgr8</code> (after cv_bridge)</span>
+          <span class="k">qos</span><span class="v">depth=10, reliability=<span class="accent">RELIABLE</span>, durability=VOLATILE</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow label"><span class="lbl">sensor_msgs/Image</span></div>
+
+    <!-- 2. Rate gate -->
+    <div class="stage kind-process">
+      <div class="stage-head">
+        <span class="stage-num">02 · RATE LIMIT</span>
+        <h3 class="stage-title">Drop frames to <code>detection_rate_hz</code></h3>
+        <span class="tag green">guard</span>
+      </div>
+      <div class="stage-body">
+        <p>The camera ships frames faster than we need to decode. The first
+          line of <code>image_callback</code> early-returns if the previous
+          decode ran less than <code>1 / detection_rate_hz</code> seconds ago.</p>
+<pre class="snippet"><span class="kw">if</span> now - self.last_detection_time &lt; self.detection_period:
+    <span class="kw">return</span>
+self.last_detection_time = now</pre>
+      </div>
+    </div>
+
+    <div class="arrow"></div>
+
+    <!-- 3. cv_bridge -->
+    <div class="stage kind-process">
+      <div class="stage-head">
+        <span class="stage-num">03 · BRIDGE</span>
+        <h3 class="stage-title"><code>cv_bridge</code>: ROS Image &rarr; OpenCV BGR</h3>
+        <span class="tag green">numpy.ndarray</span>
+      </div>
+      <div class="stage-body">
+<pre class="snippet">cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding=<span class="str">'bgr8'</span>)</pre>
+        <p>Conversion errors are caught and logged so a single malformed
+          frame can't crash the node and strand the robot.</p>
+      </div>
+    </div>
+
+    <div class="arrow"></div>
+
+    <!-- 4. Preprocess -->
+    <div class="stage kind-process">
+      <div class="stage-head">
+        <span class="stage-num">04 · PREPROCESS</span>
+        <h3 class="stage-title">Grayscale + CLAHE contrast enhancement</h3>
+        <span class="tag green">primary path</span>
+      </div>
+      <div class="stage-body">
+        <p>Contrast Limited Adaptive Histogram Equalisation rescues QR
+          decoding at oblique angles and under uneven illumination.</p>
+<pre class="snippet">gray     = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+clahe    = cv2.createCLAHE(clipLimit=<span class="num">2.0</span>, tileGridSize=(<span class="num">8</span>, <span class="num">8</span>))
+enhanced = clahe.apply(gray)</pre>
+      </div>
+    </div>
+
+    <div class="arrow label"><span class="lbl">enhanced grayscale</span></div>
+
+    <!-- 5. Primary detection -->
+    <div class="stage kind-process">
+      <div class="stage-head">
+        <span class="stage-num">05 · DETECT</span>
+        <h3 class="stage-title"><code>cv2.QRCodeDetector.detectAndDecodeMulti()</code></h3>
+        <span class="tag green">primary</span>
+      </div>
+      <div class="stage-body">
+        <p>OpenCV scans the <strong>entire frame</strong> &mdash; there is no
+          manually-defined ROI &mdash; and returns the 4 corner points and
+          decoded text for every QR it finds.</p>
+<pre class="snippet">retval, decoded_info, points, _ = (
+    self.qr_detector.detectAndDecodeMulti(image)
+)</pre>
+        <div class="kv">
+          <span class="k">points</span><span class="v"><code>N&times;4&times;2</code> array of (x,y) pixel corners</span>
+          <span class="k">decoded_info</span><span class="v">list of <code>N</code> decoded strings (may be empty)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Branch into fallback -->
+    <div class="arrow label"><span class="lbl">if no detections &rarr; fallback</span></div>
+
+    <!-- 6. Fallback -->
+    <div class="stage kind-fallback">
+      <div class="stage-head">
+        <span class="stage-num">06 · FALLBACK</span>
+        <h3 class="stage-title">Adaptive Gaussian thresholding</h3>
+        <span class="tag amber">degraded codes</span>
+      </div>
+      <div class="stage-body">
+        <p>If CLAHE alone didn't find a QR, re-run detection on a binarised
+          image. This recovers partial or low-contrast codes that the primary
+          path missed.</p>
+<pre class="snippet">thresh = cv2.adaptiveThreshold(
+    enhanced, <span class="num">255</span>,
+    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+    cv2.THRESH_BINARY,
+    blockSize=<span class="num">11</span>, C=<span class="num">2</span>,
+)
+detections = self._detect_qr_codes(thresh)</pre>
+      </div>
+    </div>
+
+    <div class="arrow label"><span class="lbl">still empty &rarr; return (no publish)</span></div>
+
+    <!-- 7. Per-detection bbox area -->
+    <div class="stage kind-process">
+      <div class="stage-head">
+        <span class="stage-num">07 · MEASURE</span>
+        <h3 class="stage-title">Compute bounding-box area per detection</h3>
+        <span class="tag green">distance proxy</span>
+      </div>
+      <div class="stage-body">
+        <p>Area of the 4-corner polygon is our proxy for distance &mdash; a
+          closer QR fills more pixels. Cast to <code>float32</code> is
+          required by OpenCV 4.6 (Jazzy default); <code>float64</code>
+          raises <code>(-215) depth == CV_32F || CV_32S</code>.</p>
+<pre class="snippet">bbox_points = np.asarray(points[i], dtype=np.float32)
+bbox_area   = cv2.contourArea(bbox_points)</pre>
+      </div>
+    </div>
+
+    <div class="arrow"></div>
+
+    <!-- 8. Validation gate -->
+    <div class="stage kind-gate">
+      <div class="stage-head">
+        <span class="stage-num">08 · GATE</span>
+        <h3 class="stage-title">Validate: whitelist <em>and</em> min area</h3>
+        <span class="tag violet">2 checks</span>
+      </div>
+      <div class="stage-body">
+        <p>Both conditions must hold to "activate" a detection:</p>
+<pre class="snippet"><span class="kw">if</span> content <span class="kw">in</span> VALID_COMMANDS <span class="kw">and</span> bbox_area &gt;= self.min_bbox_area:
+    valid_detections.append((content, bbox_area))</pre>
+        <div class="kv">
+          <span class="k">VALID_COMMANDS</span><span class="v"><code>STOP · GO · TURN_LEFT · TURN_RIGHT · U_TURN · SPEED_UP · SPEED_DOWN</code></span>
+          <span class="k">min_bbox_area</span><span class="v"><code>500 px²</code> (configurable via <code>qr_params.yaml</code>)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"></div>
+
+    <!-- 9. Spatial filter -->
+    <div class="stage kind-gate">
+      <div class="stage-head">
+        <span class="stage-num">09 · SPATIAL FILTER</span>
+        <h3 class="stage-title">Closest QR wins (max bbox area)</h3>
+        <span class="tag violet">tiebreaker</span>
+      </div>
+      <div class="stage-body">
+        <p>If several valid QRs are in the frame at once, pick the one
+          occupying the most pixels. Resolves the "simultaneous detections"
+          edge case deterministically.</p>
+<pre class="snippet">best_command, best_area = max(valid_detections, key=<span class="kw">lambda</span> x: x[<span class="num">1</span>])</pre>
+      </div>
+    </div>
+
+    <div class="arrow"></div>
+
+    <!-- 10. Cooldown -->
+    <div class="stage kind-gate">
+      <div class="stage-head">
+        <span class="stage-num">10 · COOLDOWN</span>
+        <h3 class="stage-title">Per-command debounce (<code>1.0 s</code>)</h3>
+        <span class="tag violet">de-bounce</span>
+      </div>
+      <div class="stage-body">
+        <p>A QR card held in the frame for many frames must only fire its
+          command once. We track the last publish time per command and
+          early-return if we're inside the window.</p>
+<pre class="snippet">last_time = self.last_command_time.get(best_command, <span class="num">0.0</span>)
+<span class="kw">if</span> now - last_time &lt; self.cooldown_sec:
+    <span class="kw">return</span></pre>
+      </div>
+    </div>
+
+    <div class="arrow"></div>
+
+    <!-- 11. Publish fan-out -->
+    <div class="outputs">
+      <div class="stage kind-publish">
+        <div class="stage-head">
+          <span class="stage-num">11a · PUBLISH</span>
+          <h3 class="stage-title">Validated command</h3>
+          <span class="tag green">std_msgs/String</span>
+        </div>
+        <div class="stage-body">
+<pre class="snippet">cmd_msg = String()
+cmd_msg.data = best_command
+self.command_pub.publish(cmd_msg)</pre>
+          <div class="kv">
+            <span class="k">topic</span><span class="v"><code>/qr_command</code></span>
+            <span class="k">consumer</span><span class="v"><code>command_interpreter_node</code> (FSM)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage kind-publish">
+        <div class="stage-head">
+          <span class="stage-num">11b · PUBLISH</span>
+          <h3 class="stage-title">All raw detections (for logging)</h3>
+          <span class="tag green">JSON string</span>
+        </div>
+        <div class="stage-body">
+<pre class="snippet">det_msg.data = json.dumps(all_detections)
+self.detections_pub.publish(det_msg)</pre>
+          <div class="kv">
+            <span class="k">topic</span><span class="v"><code>/qr_detections</code></span>
+            <span class="k">consumer</span><span class="v"><code>data_logger_node</code> &rarr; CSV</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- =========================== FOOTER =========================== -->
+  <footer class="footer">
+    Generated from <code>repo/src/qr_nav/qr_detector_node.py</code>,
+    <code>repo/src/config/qr_params.yaml</code> &amp;
+    <code>repo/src/docs/QR_ACTIVATION.md</code>.
+    See also: <a href="qr_nav_explained.html">qr_nav_explained.html</a> &middot;
+    <a href="ARCHITECTURE.md">ARCHITECTURE.md</a>
+  </footer>
+
+</div>
+
+</body>
+</html>
