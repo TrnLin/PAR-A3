@@ -117,69 +117,83 @@ The FSM boots into `IDLE` (stationary) so the robot never moves on launch alone 
 - **Signal Loss**: A configurable `recovery_timeout` drops the robot into a safe `RECOVERING` crawl state if visual cues are lost.
 
 ## 📦 Folder Structure
-```cmd
-PAR-A3/
+```text
+repo/
 ├── qr_cards/                               # Generated printable QR cards
-├── public/                               
-├── src/
-│   └── qr_nav/
-│       ├── config/
-│       │   └── qr_params.yaml              # Tunable speeds, thresholds & QoS
-│       ├── launch/
-│       │   └── qr_nav.launch.py
-│       ├── qr_nav/
-│       │   ├── qr_detector_node.py         # OAK-D perception & validation
-│       │   ├── command_interpreter_node.py # FSM & velocity publisher
-│       │   └── data_logger_node.py         # CSV metric logging
-|       ├── utils/
-|       |   └── generate_qr_cards.py        # AST-parser to sync cards with codebase
-│       ├── package.xml
-│       └── setup.py
+├── public/                                 # README images
+├── logs/                                   # session_<TS>/... captured by qr_logging_env.sh
+├── results/                                # CSV trials + analysis notebooks
+├── src/                                    # ament_python ROS 2 package root (qr_nav)
+│   ├── package.xml                         # ROS 2 manifest
+│   ├── setup.py                            # entry points: qr_detector / command_interpreter / qr_logger
+│   ├── config/
+│   │   └── qr_params.yaml                  # Tunable speeds, thresholds & QoS
+│   ├── launch/
+│   │   └── qr_nav.launch.py
+│   ├── qr_nav/
+│   │   ├── qr_detector_node.py             # OAK-D perception & validation
+│   │   ├── command_interpreter_node.py     # FSM & velocity publisher
+│   │   └── data_logger_node.py             # CSV metric logging
+│   ├── utils/
+│   │   └── generate_qr_cards.py            # AST-parser to sync cards with detector
+│   └── docs/                               # DEPLOY.md, ARCHITECTURE.md, lessons learned
+├── tools/                                  # qr_install_and_run.sh + qr_*.sh stage scripts
 ├── README.md
 └── requirements.txt
 ```
 
 ## ⚙️ Installation & Setup
 
-### 1. Clone & Intall Dependencies
+> **Prerequisites:** ROS 2 **Jazzy** sourced in the current shell (`source /opt/ros/jazzy/setup.bash`), `python3`, `python3-colcon-common-extensions`, and on the robot `ros-jazzy-cv-bridge` + `python3-opencv`. For live runs you also need the ROSbot OAK-D driver publishing `/oak/rgb/image_raw` and `/cmd_vel` available as `geometry_msgs/msg/TwistStamped`.
+
+### Quick start (one command)
+
+[`tools/qr_install_and_run.sh`](tools/qr_install_and_run.sh) creates the Python venv, installs `requirements.txt`, builds the colcon workspace with `--symlink-install`, sources the overlay, and dispatches to the matching staged-deploy script under `tools/`. Run from the repo root:
+
 ```bash
 git clone https://github.com/TrnLin/PAR-A3.git
-cd PAR-A3
+cd PAR-A3/repo
 
-# Create and activate virtual environment (for tools & linting)
-python -m venv venv (`macOS`: python3 -m venv venv) # Create and activate a virtual environment
-.\venv\Scripts\Activate.ps1 (`macOS`: source venv/bin/activate)
-pip install -r .\requirements.txt (`macOS`: pip install -r requirements.txt)  # Install Python dependencies
-deactivate # deactive venv when finished
+./tools/qr_install_and_run.sh --mode stage2     # safe: /cmd_vel diverted to /cmd_vel_dummy
+./tools/qr_install_and_run.sh --mode stage4     # live: real motion on /cmd_vel
 ```
 
-### 2. Generate Printable QR Cards
+Other supported modes (delegate to the existing stage scripts in [`tools/`](tools/)):
 
-To ensure printed QR codes are perfectly synchronized with the detector node's accepted commands, generate the test cards locally:
+| `--mode` | Underlying script | Use for |
+|----------|-------------------|---------|
+| `preflight` | [`tools/qr_preflight.sh`](tools/qr_preflight.sh) | Camera + `/cmd_vel` checks, no motion |
+| `stage1` | [`tools/qr_stage1_detect.sh`](tools/qr_stage1_detect.sh) | Detector only, robot stationary |
+| `stage2` | [`tools/qr_stage2_diverted.sh`](tools/qr_stage2_diverted.sh) | Full launch, motors diverted (safe on floor) |
+| `stage3` | [`tools/qr_stage3_wheels_off.sh`](tools/qr_stage3_wheels_off.sh) | Full launch, robot lifted (turn calibration) |
+| `stage4` | [`tools/qr_stage4_floor.sh`](tools/qr_stage4_floor.sh) | Live floor run |
+
+Useful flags: `--skip-build` reuses an existing `install/` overlay; `--no-venv` skips the local Python tooling install; everything after a literal `--` is forwarded as a launch argument, e.g. `./tools/qr_install_and_run.sh --mode stage2 -- session_id:=trial_a`.
+
+### Manual setup (advanced)
+
+If you prefer to drive each step yourself, the wrapper above runs the equivalent of:
 
 ```bash
-python src/utils/generate_qr_cards.py
-```
+git clone https://github.com/TrnLin/PAR-A3.git
+cd PAR-A3/repo
 
-(Print the resulting `qr_cards/all_commands.pdf` at 100% scale).
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+deactivate
 
-### 3. Build the ROS2 Workspace
-```bash
-colcon build --packages-select qr_nav
+python3 src/utils/generate_qr_cards.py          # (re)build qr_cards/all_commands.pdf; print at 100%
+
+colcon build --packages-select qr_nav --symlink-install
 source install/setup.bash
+
+ros2 launch qr_nav qr_nav.launch.py             # add cmd_vel_topic:=/cmd_vel_dummy for safe runs
 ```
 
-## 🚀 Running the System
-Ensure the ROSbot hardware drivers (OAK-D camera and motor controllers) are active, then launch the system with a single command:
-
-```bash
-ros2 launch qr_nav qr_nav.launch.py
-```
-
-All parameters (speeds, timeouts, bounding box limits) can be tuned without recompiling via `src/qr_nav/config/qr_params.yaml`.
+All velocity and timeout parameters are tunable without recompiling via [`src/config/qr_params.yaml`](src/config/qr_params.yaml). Operator-facing staged deployment, calibration, and troubleshooting notes live in [`src/docs/DEPLOY.md`](src/docs/DEPLOY.md).
 
 ## 📊 Evaluation Metrics
-Data for evaluation is automatically logged to CSV files in `/tmp/qr_nav_logs` by the `data_logger_node`. The evaluation rubric requires analysis of $10+$ runs covering:
+When launched through `tools/qr_install_and_run.sh` (or any of the `tools/qr_stage*.sh` scripts), the auto-logging hook in [`tools/qr_logging_env.sh`](tools/qr_logging_env.sh) captures each run under `logs/session_<TS>/<stage>_<TS>/`, including the `data_logger_node` CSV. The evaluation rubric requires analysis of $10+$ runs covering:
 
 | Metric | Description |
 |--------|-------------|

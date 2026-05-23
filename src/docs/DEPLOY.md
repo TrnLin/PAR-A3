@@ -35,6 +35,8 @@ This guide is the consolidation of every gotcha hit during initial bring-up. Rea
 
 ## 1. Ship & build
 
+> **Single-command shortcut:** once the code is on the robot, the stages in §3-§6 below can be invoked through [`../../tools/qr_install_and_run.sh`](../../tools/qr_install_and_run.sh), which runs `colcon build --symlink-install`, sources `install/setup.bash`, and dispatches to the corresponding `tools/qr_stage*.sh`. The manual steps in this section stay authoritative for first-time bring-up, `scp` deployment, and one-time apt setup.
+
 From your laptop:
 
 ```bash
