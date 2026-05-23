@@ -41,47 +41,6 @@ This project simulates real-world logistics and warehouse robotics (e.g., Amazon
     </picture>
 </div>
 
-## 🏗️ System Architecture
-
-The system is structured as three primary ROS 2 nodes communicating over standard topics:
-
-```text
-┌──────────────────────────────────────────────────────┐
-│              ROSbot 3 PRO Hardware                   │
-│  OAK-D Pro RGB (/oak/rgb/image_raw)                  │
-└────────────────────────┬─────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────┐
-│              QR DETECTOR NODE (qr_detector)          │
-│  • OpenCV QRCodeDetector with detectAndDecodeMulti() │
-│  • Preprocessing: CLAHE + adaptive threshold fallback│
-│  • Validates against 7 known commands                │
-│  • Multi-QR: selects largest bbox (closest code)     │
-│  • 1.0s cooldown per command (debounce)              │
-│  Publishes: /qr_command, /qr_detections              │
-└────────────────────────┬─────────────────────────────┘
-                         │
-                         ▼
-┌──────────────────────────────────────────────────────┐
-│       COMMAND INTERPRETER NODE (command_interpreter) │
-│  • FSM: IDLE, DRIVING, TURNING, STOPPED, RECOVERING  │
-│  • 7 commands mapped to velocity behaviors           │
-│  • Timed turns (90°=2s, 180°=4s)                     │
-│  • STOP waits for GO; RECOVERING on timeout          │
-│  Publishes: /cmd_vel, /nav_state                     │
-└────────────────────────┬─────────────────────────────┘
-                         │
-                         ▼
-                  ROSbot Motors (/cmd_vel)
-
-┌──────────────────────────────────────────────────────┐
-│              DATA LOGGER NODE (qr_logger)            │
-│  • Logs commands, detections, states to CSV          │
-│  • Summary on shutdown: counts per command type      │
-└──────────────────────────────────────────────────────┘
-```
-
 ## 🧠 Navigation Policy (FSM)
 A Finite State Machine ensures reliable transitions between behaviors and prevents conflicting commands. The FSM boots into `IDLE` (stationary) so the robot never moves on launch alone — the first valid QR card arms it.
 
