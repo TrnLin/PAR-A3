@@ -11,7 +11,7 @@ qr_detector:
     rgb_image_topic: "/oak/rgb/image_raw"
 
     # --- Detection ---
-    detection_rate_hz: 5.0 # Hz — frame processing rate
+    detection_rate_hz: 10.0 # Hz — frame processing rate
     min_bbox_area: 500 # pixels — ignore tiny QR detections
     command_cooldown: 1.0 # seconds — debounce same command
 
@@ -26,11 +26,11 @@ command_interpreter:
     # --- Speed ---
     # First-run safety profile: half the demo speeds. Re-tune for the demo
     # only after Phase 4 is clean (see plan / README).
-    cruise_speed: 0.08 # m/s — base forward speed (demo: 0.2)
+    cruise_speed: 0.1 # m/s — base forward speed (demo: 0.2)
     turn_speed: 0.4 # rad/s — angular velocity for turns (demo: 0.8)
     speed_increment: 0.05 # m/s — SPEED_UP / SPEED_DOWN step
     min_speed: 0.05 # m/s — floor for SPEED_DOWN
-    max_speed: 0.4 # m/s — ceiling for SPEED_UP
+    max_speed: 0.2 # m/s — ceiling for SPEED_UP
 
     # --- Turn durations ---
     # MUST be re-derived whenever turn_speed changes:
