@@ -1171,7 +1171,7 @@ turn_180_duration = π   / turn_speed   ≈ 3.1416 / 0.4 ≈ 7.85 s  → rounded
         <tr><td><code>TURN_LEFT</code></td><td><code>(0, +turn_speed)</code></td><td>4.0 s</td><td>Then auto-resumes <code>DRIVING</code>.</td></tr>
         <tr><td><code>TURN_RIGHT</code></td><td><code>(0, –turn_speed)</code></td><td>4.0 s</td><td>Then auto-resumes <code>DRIVING</code></td></tr>
         <tr><td><code>U_TURN</code></td><td><code>(0, +turn_speed)</code></td><td>8.0 s</td><td>Same direction as TURN_LEFT, twice as long.</td></tr>
-        <tr><td><code>SPEED_UP</code></td><td><code>(cruise+0.05, 0)</code></td><td>continuous</td><td>Capped at <code>max_speed=0.4</code>.</td></tr>
+        <tr><td><code>SPEED_UP</code></td><td><code>(cruise+0.05, 0)</code></td><td>continuous</td><td>Capped at <code>max_speed=0.2</code>.</td></tr>
         <tr><td><code>SPEED_DOWN</code></td><td><code>(cruise–0.05, 0)</code></td><td>continuous</td><td>Floored at <code>min_speed=0.05</code>.</td></tr>
       </tbody>
     </table>
@@ -1253,12 +1253,12 @@ ros2 launch qr_nav qr_nav.launch.py cmd_vel_topic:=/cmd_vel_dummy</code></pre>
 
 <span class="tk-key">command_interpreter</span>:
   <span class="tk-key">ros__parameters</span>:
-    <span class="tk-key">cruise_speed</span>:       <span class="tk-n">0.08</span>   <span class="tk-c"># m/s   (demo: 0.20)</span>
-    <span class="tk-key">turn_speed</span>:         <span class="tk-n">0.4</span>    <span class="tk-c"># rad/s (demo: 0.80)</span>
+    <span class="tk-key">cruise_speed</span>:       <span class="tk-n">0.1</span>   <span class="tk-c"># m/s </span>
+    <span class="tk-key">turn_speed</span>:         <span class="tk-n">0.4</span>    <span class="tk-c"># rad/s</span>
     <span class="tk-key">turn_90_duration</span>:   <span class="tk-n">4.0</span>    <span class="tk-c"># s     (= π/2 / turn_speed, rounded up)</span>
     <span class="tk-key">turn_180_duration</span>:  <span class="tk-n">8.0</span>    <span class="tk-c"># s     (= 2 × turn_90_duration)</span>
     <span class="tk-key">control_rate_hz</span>:    <span class="tk-n">20.0</span>
-    <span class="tk-key">recovery_timeout</span>:   <span class="tk-n">3.0</span>    <span class="tk-c"># enter RECOVERING after no command (demo: 5.0)</span>
+    <span class="tk-key">recovery_timeout</span>:   <span class="tk-n">3.0</span>    <span class="tk-c"># enter RECOVERING after no command</span>
 
 <span class="tk-key">qr_logger</span>:
   <span class="tk-key">ros__parameters</span>:
@@ -1353,7 +1353,7 @@ ros2 launch qr_nav qr_nav.launch.py cmd_vel_topic:=/cmd_vel_dummy</code></pre>
         <p>
           Elapsed ≥ 4.0 s. Transition to <code>DRIVING</code>, publish
           <code>"DRIVING"</code> on <code>/nav_state</code>, immediately emit
-          <code>TwistStamped(0.08, 0)</code>. Wheels resume forward.
+          <code>TwistStamped(0.1, 0)</code>. Wheels resume forward.
         </p>
       </div>
       <div class="timeline-step">

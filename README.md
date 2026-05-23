@@ -17,7 +17,7 @@ A real-time autonomous navigation system that enables the **Husarion ROSbot 3 PR
 
 ## 📌 Project Overview
 
-This project simulates real-world logistics and warehouse robotics (e.g., Amazon Robotics fiducial marker navigation). Rather than relying on pre-programmed maps, the robot dynamically reads environmental cues (QR codes) to guide its behavior. The system must process the full perception-to-action pipeline:
+This project simulates real-world logistics and warehouse robotics. Rather than relying on pre-programmed maps, the robot dynamically reads environmental cues (QR codes) to guide its behavior. The system must process the full perception-to-action pipeline:
 
 - **Detect and decode** visual signals using onboard RGB cameras.
 - **Map decoded instructions** to precise velocity and rotation commands.
@@ -51,7 +51,7 @@ A Finite State Machine ensures reliable transitions between behaviors and preven
 | `U_TURN` | 180° turn | `DRIVING` -> `TURNING` -> `DRIVING` |
 | `STOP` | Halt, wait for GO | any -> `STOPPED` |
 | `GO` | Resume driving | `IDLE`\|`STOPPED` -> `DRIVING` |
-| `SPEED_UP` | +0.05 m/s (max 0.4) | `DRIVING` -> `DRIVING` |
+| `SPEED_UP` | +0.05 m/s (max 0.2) | `DRIVING` -> `DRIVING` |
 | `SPEED_DOWN` | -0.05 m/s (min 0.05) | `DRIVING` -> `DRIVING` |
 
 ### FSM Behaviours

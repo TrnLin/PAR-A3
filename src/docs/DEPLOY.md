@@ -15,10 +15,10 @@ This guide is the consolidation of every gotcha hit during initial bring-up. Rea
   - `/cmd_vel` message type: `geometry_msgs/msg/TwistStamped` (ROS 2 Jazzy + Husarion convention, **not** plain `Twist`).
   - `cv2.contourArea` cast to `np.float32` (OpenCV 4.6 on Jazzy rejects `float64`).
 - **Config tuned for safe first run** in [`config/qr_params.yaml`](config/qr_params.yaml):
-  - `cruise_speed: 0.08 m/s` (demo: 0.2)
-  - `turn_speed: 0.4 rad/s` (demo: 0.8)
-  - `turn_90_duration: 4.0 s`, `turn_180_duration: 8.0 s` (re-derived for new turn_speed)
-  - `recovery_timeout: 3.0 s` (demo: 5.0)
+  - `cruise_speed: 0.1 m/s`
+  - `turn_speed: 0.4 rad/s`
+  - `turn_90_duration: 4.0 s`, `turn_180_duration: 8.0 s` 
+  - `recovery_timeout: 3.0 s`
 
 ## Robot facts to keep in mind
 
@@ -176,15 +176,15 @@ Walk through this script with the cards. Every message has a `header` block (`st
 | Card you show              | Expected `/cmd_vel_dummy` `twist`                | Expected `/nav_state`           |
 | -------------------------- | ------------------------------------------------ | ------------------------------- |
 | (none, just launched)      | `0.0, 0.0`                                       | `IDLE`                          |
-| `GO` (first card)          | `0.08, 0.0`                                      | `IDLE` → `DRIVING`              |
+| `GO` (first card)          | `0.1, 0.0`                                      | `IDLE` → `DRIVING`              |
 | `STOP`                     | `0.0, 0.0`                                       | `STOPPED`                       |
 | `TURN_LEFT` (while STOPPED)| (no change)                                      | (ignored — STOPPED only takes GO) |
-| `GO` (while STOPPED)       | `0.08, 0.0`                                      | `STOPPED` → `DRIVING`           |
-| `TURN_LEFT`                | `0.0, +0.4` for 4 s, then back to `0.08, 0.0`    | `TURNING` → `DRIVING`           |
+| `GO` (while STOPPED)       | `0.1, 0.0`                                      | `STOPPED` → `DRIVING`           |
+| `TURN_LEFT`                | `0.0, +0.4` for 4 s, then back to `0.1, 0.0`    | `TURNING` → `DRIVING`           |
 | `TURN_RIGHT`               | `0.0, -0.4` for 4 s                              | `TURNING` → `DRIVING`           |
 | `U_TURN`                   | `0.0, +0.4` for 8 s                              | `TURNING` → `DRIVING`           |
 | `SPEED_UP`                 | `0.13, 0.0`                                      | `DRIVING`                       |
-| `SPEED_DOWN`               | back to `0.08, 0.0`                              | `DRIVING`                       |
+| `SPEED_DOWN`               | back to `0.1, 0.0`                              | `DRIVING`                       |
 
 If you show a turn card or `SPEED_UP`/`SPEED_DOWN` as the *first* card out of `IDLE`, the FSM ignores it. `IDLE` acts as a strict safety lock and requires a `GO` card to deliberately arm the robot into `DRIVING`.
 
